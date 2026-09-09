@@ -1,0 +1,20 @@
+{
+  "name": "auto-tstory",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Tistory automation feasibility probe",
+  "type": "module",
+  "engines": { "node": ">=22.20.0" },
+  "scripts": {
+    "p0": "tsx scripts/p0.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test tests/*.test.ts",
+    "test:browser": "tsx scripts/browser-smoke.ts"
+  },
+  "dependencies": { "playwright": "1.63.0" },
+  "devDependencies": {
+    "@types/node": "22.20.1",
+    "tsx": "4.23.13",
+    "typescript": "7.0.2"
+  }
+}
