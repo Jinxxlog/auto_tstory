@@ -1,9 +1,12 @@
 import { createInterface } from 'node:readline';
 import { parseArgs } from 'node:util';
 import { TistoryProbe } from '../src/services/tistory/probe.js';
+import { pathToFileURL } from 'node:url';
+import path from 'node:path';
+import { projectRoot } from '../src/services/tistory/config.js';
 
 const { values } = parseArgs({ options: { blog: { type: 'string' }, help: { type: 'boolean' } } });
-const help = '명령: status | blog https://이름.tistory.com | inspect | editor | screenshot | restart | quit';
+const help = '명령: status | blog https://이름.tistory.com | checkpoint | inspect | editor | screenshot | restart | action <단계> | quit';
 if (values.help) {
   console.log('npm run p0 -- --blog https://이름.tistory.com\n' + help);
 } else {
@@ -29,10 +32,23 @@ if (values.help) {
         switch (command) {
           case 'status': result = await probe.status(); break;
           case 'blog': result = await probe.setBlog(args.join(' ')); break;
-          case 'inspect': result = await probe.inspect(); break;
+          case 'inspect': {
+            const inspection = await probe.inspect();
+            result = { saved: '.local/last-inspection.json', url: inspection.url, frames: inspection.frames.map(frame => ({ name: frame.name, controls: frame.controls.length })) };
+            break;
+          }
           case 'editor': result = await probe.editor(); break;
           case 'screenshot': result = await probe.screenshot(); break;
+          case 'checkpoint': result = await probe.checkpoint(); break;
           case 'restart': result = await probe.restart(); break;
+          case 'action': {
+            // Reload the inspected editor adapter between P0 development steps.
+            const moduleUrl = pathToFileURL(path.join(projectRoot, 'src/services/tistory/actions.ts'));
+            moduleUrl.searchParams.set('version', String(Date.now()));
+            const adapter = await import(moduleUrl.href);
+            result = await adapter.run(probe, args);
+            break;
+          }
           default: result = help;
         }
         console.log(JSON.stringify(result, null, 2));

@@ -5,6 +5,7 @@ import path from 'node:path';
 import assert from 'node:assert/strict';
 import { localRoot } from '../src/services/tistory/config.js';
 import { createTestDraft } from '../src/services/tistory/fixture.js';
+import { TistoryProbe } from '../src/services/tistory/probe.js';
 
 // Uses an isolated local test profile, never the user's Tistory session.
 await mkdir(localRoot, { recursive: true });
@@ -26,15 +27,26 @@ try {
   await page.getByLabel('body').fill('본문 입력 확인');
   assert.equal(await page.getByLabel('title').inputValue(), 'P0 한글 입력 확인');
   await context.addCookies([{ name: 'p0-test', value: 'persisted', url: origin, expires: Math.floor(Date.now() / 1000) + 3600 }]);
+  await context.addCookies([{ name: 'p0-session', value: 'session-only', url: origin }]);
   await page.evaluate(() => localStorage.setItem('p0-test', 'persisted'));
+  const authState = await context.storageState({ indexedDB: true });
   await context.close();
   context = await chromium.launchPersistentContext(profile, { channel: 'chrome', headless: true });
+  await context.addCookies(authState.cookies);
   page = context.pages()[0];
   await page.goto(origin);
   assert.equal((await context.cookies(origin)).find(cookie => cookie.name === 'p0-test')?.value, 'persisted');
+  assert.equal((await context.cookies(origin)).find(cookie => cookie.name === 'p0-session')?.value, 'session-only');
   assert.equal(await page.evaluate(() => localStorage.getItem('p0-test')), 'persisted');
+  const probe = new TistoryProbe(undefined, profile);
+  probe.context = context;
+  probe.blog = origin;
+  const inspection = await probe.inspect();
+  assert.ok(inspection.frames[0].controls.some(control => control.type === 'file'));
+  probe.blog = 'https://different-blog.tistory.com';
+  await assert.rejects(() => probe.inspect(), /인증 화면은 검사하지 않습니다/);
 
-  const fixtureDir = path.join(localRoot, 'fixtures');
+  const fixtureDir = path.join(profile, 'fixtures');
   await mkdir(fixtureDir, { recursive: true });
   const draft = createTestDraft();
   await writeFile(path.join(fixtureDir, 'draft.json'), JSON.stringify(draft, null, 2), 'utf8');
@@ -50,7 +62,7 @@ try {
   }
   await page.locator('input[type=file]').setInputFiles(files);
   assert.equal(await page.locator('input[type=file]').evaluate((el: HTMLInputElement) => el.files?.length), 2);
-  const result = { at: new Date().toISOString(), scope: 'local-only', textInput: true, persistentCookie: true, persistentLocalStorage: true, twoFileSelection: true, tistoryVerified: false };
+  const result = { at: new Date().toISOString(), scope: 'local-only', textInput: true, persistentCookie: true, restoredSessionCookie: true, persistentLocalStorage: true, domInspection: true, authenticationPageInspectionBlocked: true, twoFileSelection: true, tistoryVerified: false };
   await writeFile(path.join(localRoot, 'smoke-result.json'), JSON.stringify(result, null, 2));
   console.log(JSON.stringify(result, null, 2));
 } finally {
