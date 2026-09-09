@@ -18,6 +18,6 @@ export function normalizeBlogUrl(value: string): string {
 export function safeUrl(value: string): string {
   try {
     const url = new URL(value);
-    return `${url.origin}${url.pathname}`;
+    return url.origin === 'null' ? `${url.protocol}${url.pathname}` : `${url.origin}${url.pathname}`;
   } catch { return 'unavailable'; }
 }

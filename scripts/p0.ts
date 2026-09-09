@@ -19,7 +19,7 @@ if (values.help) {
   try {
     await probe.start();
     console.log('전용 Chrome이 열렸습니다. 로그인은 브라우저에서 직접 진행하세요.');
-    console.log('이 도구는 인증 정보를 터미널로 받지 않습니다. 현재 버전은 글을 발행하지 않습니다.');
+    console.log('로그인은 브라우저에서 진행하세요. action save-private <카테고리>는 실제 비공개 글을 저장합니다.');
     console.log(help);
     console.log(JSON.stringify(await probe.status()));
     lines = createInterface({ input: process.stdin, crlfDelay: Infinity });
