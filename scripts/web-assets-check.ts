@@ -1,0 +1,38 @@
+import { chromium } from 'playwright';
+import path from 'node:path';
+import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+const browser = await chromium.launch({ channel: 'chrome', headless: true });
+const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
+const suffix = Date.now(); const coverName = `test-cover-${suffix}.png`; const title = `[로컬 UI 테스트] 표지·사진 정렬 ${suffix}`;
+try {
+  await page.goto('http://127.0.0.1:3000');
+  await page.getByRole('button', { name: '▧ 표지 라이브러리' }).click();
+  await page.getByRole('button', { name: '＋ 표지 추가' }).waitFor();
+  await page.locator('input[type=file]').setInputFiles({ name: coverName, mimeType: 'image/png', buffer: await readFile(path.resolve('.local/fixtures/p0-image-1.png')) });
+  await page.getByRole('heading', { name: coverName, exact: true }).waitFor();
+  await page.getByRole('button', { name: '▤ 나의 원고' }).click();
+  await page.getByRole('button', { name: '＋ 새 원고 작성' }).click();
+  await page.getByLabel('제목', { exact: true }).fill(title);
+  await page.getByLabel('본문', { exact: false }).fill('## 로컬에서만 검증\n\n표지 선택과 사진 순서를 검증합니다.');
+  await page.getByLabel('라이브러리에서 표지 가져오기').selectOption({ label: coverName });
+  await page.getByLabel('사진 1 설명').waitFor();
+  await page.locator('input[webkitdirectory]').setInputFiles(path.resolve('.local/fixtures'));
+  await page.getByLabel('사진 3 설명').waitFor();
+  await page.getByLabel('사진 3 설명').fill('맨 위로 이동할 사진');
+  await page.getByRole('button', { name: '사진 3 위로', exact: true }).click();
+  await page.getByRole('button', { name: '사진 2 위로', exact: true }).click();
+  assert.equal(await page.getByLabel('사진 1 설명').inputValue(), '맨 위로 이동할 사진');
+  await page.getByRole('button', { name: '원고 저장', exact: true }).click();
+  await page.getByText('저장됨 · 버전 1', { exact: true }).waitFor();
+  await page.reload(); await page.getByRole('button').filter({ hasText: title }).click();
+  assert.equal(await page.getByLabel('사진 1 설명').inputValue(), '맨 위로 이동할 사진');
+  await page.locator('article h2').waitFor();
+  await page.setViewportSize({ width: 390, height: 844 });
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
+  await page.waitForFunction(() => Array.from(document.images).every(image => image.complete && image.naturalWidth > 0));
+  await page.screenshot({ path: '.local/p1-mobile.png', fullPage: true });
+  const refused = await fetch('http://127.0.0.1:3000/api/app', { method: 'POST', headers: { 'content-type': 'application/json', origin: 'https://example.com' }, body: JSON.stringify({ action: 'connect' }) });
+  assert.equal(refused.status, 403);
+  console.log(JSON.stringify({ library: true, folderImport: true, orderPersisted: true, captionsPersisted: true, mobileOverflow: false, csrfRejected: true, noPublication: true }));
+} finally { await browser.close(); }

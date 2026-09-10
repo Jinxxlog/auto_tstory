@@ -6,3 +6,13 @@
 - 설계를 변경하면 이유와 영향을 결정 기록에 남긴다. 사용자 지시가 이 문서나 계획보다 우선한다.
 - 티스토리 로그인 상태, 쿠키, API 키, 실제 사용자 원본 자료를 Git이나 일반 로그에 포함하지 않는다.
 - 현재 개발 범위와 발행 모드는 `PROJECT_PLAN.md`를 따른다. 초기 검증은 비공개 테스트 글 기준이다.
+
+<!-- BEGIN:nextjs-agent-rules -->
+
+# This is NOT the Next.js you know
+
+This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` (resolved from this file's directory; in monorepos the `next` package may not be visible from the repo root) before writing any code. Heed deprecation notices.
+
+This block is written and re-added by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
+
+<!-- END:nextjs-agent-rules -->

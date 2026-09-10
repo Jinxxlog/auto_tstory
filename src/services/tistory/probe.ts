@@ -81,6 +81,7 @@ export class TistoryProbe {
       const dom = await frame.evaluate(() => {
         return {
           text: document.body?.innerText.slice(0, 18_000),
+          images: Array.from(document.images).map(image => ({ width: image.naturalWidth, height: image.naturalHeight, visible: image.getClientRects().length > 0 })),
           controls: Array.from(document.querySelectorAll('button, a, input, textarea, select, [role="button"], [role="option"], [contenteditable="true"], iframe'))
             .filter(el => el.getClientRects().length > 0 || el.getAttribute('type') === 'file')
             .map(el => ({
