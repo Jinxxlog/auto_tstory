@@ -17,6 +17,7 @@ storage-state.json
 
 # User content, local database and diagnostics
 data/
+backups/
 *.db
 *.db-*
 *.sqlite
