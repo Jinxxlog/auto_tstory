@@ -14,11 +14,12 @@ try {
   await page.getByRole('button', { name: '▤ 나의 원고' }).click();
   await page.getByRole('button', { name: '＋ 새 원고 작성' }).click();
   await page.getByLabel('제목', { exact: true }).fill(title);
-  await page.getByLabel('본문', { exact: false }).fill('## 로컬에서만 검증\n\n표지 선택과 사진 순서를 검증합니다.');
+  await page.locator('textarea.markdown').fill('## 로컬에서만 검증\n\n표지 선택과 사진 순서를 검증합니다.');
   await page.getByLabel('라이브러리에서 표지 가져오기').selectOption({ label: coverName });
   await page.getByLabel('사진 1 설명').waitFor();
   await page.locator('input[webkitdirectory]').setInputFiles(path.resolve('.local/fixtures'));
   await page.getByLabel('사진 3 설명').waitFor();
+  await page.waitForFunction(() => Array.from(document.querySelectorAll('button')).some(button => button.textContent === '사진 선택' && !button.disabled));
   await page.getByLabel('사진 3 설명').fill('맨 위로 이동할 사진');
   await page.getByRole('button', { name: '사진 3 위로', exact: true }).click();
   await page.getByRole('button', { name: '사진 2 위로', exact: true }).click();

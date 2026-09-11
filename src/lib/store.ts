@@ -12,6 +12,7 @@ export function openStore(root = dataRoot) {
   db.exec(`PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000;
     CREATE TABLE IF NOT EXISTS migrations (version INTEGER PRIMARY KEY);
     CREATE TABLE IF NOT EXISTS documents (id TEXT PRIMARY KEY, body TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS draft_versions (id TEXT NOT NULL, version INTEGER NOT NULL, body TEXT NOT NULL, PRIMARY KEY(id,version));
     CREATE TABLE IF NOT EXISTS assets (id TEXT PRIMARY KEY, body TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS settings (id INTEGER PRIMARY KEY CHECK(id=1), body TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS jobs (id TEXT PRIMARY KEY, dedupe TEXT UNIQUE NOT NULL, kind TEXT NOT NULL, state TEXT NOT NULL, step TEXT NOT NULL, snapshot TEXT NOT NULL, result TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
@@ -28,10 +29,10 @@ export function openStore(root = dataRoot) {
   function saveDraft(input: unknown) {
     const value = validateDraft(input);
     return transaction(() => {
-      if (value.id) { const previous = draft(value.id); if (previous.version !== value.version) throw new Error('다른 화면에서 수정되었습니다. 새로고침 후 다시 저장하세요.'); }
+      if (value.id) { const previous = draft(value.id); if (previous.version !== value.version) throw new Error('다른 화면에서 수정되었습니다. 새로고침 후 다시 저장하세요.'); db.prepare('INSERT OR IGNORE INTO draft_versions VALUES (?,?,?)').run(previous.id, previous.version, JSON.stringify(previous)); }
       for (const image of value.images) asset(image.id);
       const saved: Draft = { ...value, id: value.id || randomUUID(), version: value.version + 1, updatedAt: now() };
-      db.prepare('INSERT OR REPLACE INTO documents VALUES (?,?)').run(saved.id, JSON.stringify(saved)); return saved;
+      db.prepare('INSERT OR REPLACE INTO documents VALUES (?,?)').run(saved.id, JSON.stringify(saved)); db.prepare('INSERT INTO draft_versions VALUES (?,?,?)').run(saved.id, saved.version, JSON.stringify(saved)); return saved;
     });
   }
   const toJob = (row: Record<string, unknown>): Job => ({ id: String(row.id), kind: row.kind as Job['kind'], state: String(row.state), step: String(row.step), snapshot: JSON.parse(String(row.snapshot)), result: row.result == null ? null : String(row.result), createdAt: String(row.created_at), updatedAt: String(row.updated_at) });

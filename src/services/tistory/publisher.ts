@@ -17,6 +17,7 @@ export class AttentionRequired extends Error {}
 const modeMessage = '작성 모드를 변경하시겠습니까?\n현재 서식이 유지되지 않을 수 있습니다.';
 export class Publisher {
   probe?: TistoryProbe;
+  private verificationPage?: Page;
   private unexpectedDialog = false;
   async connect(blog: string) {
     if (this.probe && (this.probe.blog !== blog || !this.probe.context.pages().some(page => !page.isClosed()))) await this.close();
@@ -137,7 +138,15 @@ export class Publisher {
   async verify(job: Job) {
     const { blog, draft, postUrl } = job.snapshot;
     if (!draft || !postUrl || new URL(postUrl).origin !== blog) throw new AttentionRequired('저장 결과 주소가 없습니다.');
-    const probe = await this.connect(blog); const page = probe.page();
+    const probe = this.probe?.blog === blog ? this.probe : await this.connect(blog);
+    // Read-only checks use a separate tab: an editor's beforeunload prompt must
+    // not discard a potentially edited draft just to inspect the saved post.
+    if (!this.verificationPage || this.verificationPage.isClosed()) this.verificationPage = await probe.context.newPage();
+    const page = this.verificationPage;
+    await page.goto(`${blog}/manage`, { waitUntil: 'domcontentloaded' });
+    if (new URL(page.url()).origin !== blog) throw new LoginRequired('전용 Chrome에서 티스토리에 로그인한 뒤 재개하세요.');
+    await page.locator('a.link_write[href="/manage/post"]').waitFor();
+    await probe.persistIfAuthenticated();
     await page.goto(postUrl, { waitUntil: 'domcontentloaded' });
     await page.getByRole('heading', { name: draft.title, exact: true }).waitFor();
     const photos = page.locator('figure img');
@@ -155,5 +164,5 @@ export class Publisher {
     }
     return postUrl;
   }
-  async close() { const probe = this.probe; this.probe = undefined; await probe?.close().catch(() => {}); }
+  async close() { const probe = this.probe; this.probe = undefined; this.verificationPage = undefined; await probe?.close().catch(() => {}); }
 }

@@ -1,12 +1,13 @@
 import { openStore } from '../../../lib/store';
 import { checkRequest } from '../../../lib/security';
 import { renderMarkdown } from '../../../lib/content';
+import { aiStore } from '../../../lib/ai-store';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 export async function GET(request: Request) {
   try { checkRequest(request); } catch { return Response.json({ error: '로컬 웹앱에서 접근하세요.' }, { status: 403 }); }
   const store = openStore();
-  try { return Response.json({ settings: store.settings(), drafts: store.drafts(), assets: store.assets(), jobs: store.jobs().map(job => ({ ...job, result: job.result || job.snapshot.postUrl || null })), workerOnline: store.workerOnline() }); } finally { store.db.close(); }
+  try { const ai = aiStore(store); return Response.json({ ai: { connection: ai.connection(), jobs: ai.jobs().slice(0,50) }, settings: store.settings(), drafts: store.drafts(), assets: store.assets(), jobs: store.jobs().map(job => ({ ...job, result: job.result || job.snapshot.postUrl || null })), workerOnline: store.workerOnline() }); } finally { store.db.close(); }
 }
 export async function POST(request: Request) {
   try { checkRequest(request, true); } catch { return Response.json({ error: '웹앱에서 다시 요청하세요.' }, { status: 403 }); }
@@ -20,6 +21,15 @@ export async function POST(request: Request) {
   try {
     const input = JSON.parse(body);
     switch (input.action) {
+      case 'ai-connect': aiStore(store).connect(); return Response.json({ ok: true });
+      case 'ai-generate': {
+        if (typeof input.id !== 'string' || typeof input.model !== 'string' || typeof input.selection !== 'string' || typeof input.instruction !== 'string') throw new Error('생성 입력을 확인하세요.');
+        return Response.json(aiStore(store).enqueue(input.id, input.model, input.selection, input.instruction));
+      }
+      case 'ai-cancel': aiStore(store).cancel(String(input.id)); return Response.json({ ok: true });
+      case 'ai-retry': aiStore(store).retry(String(input.id)); return Response.json({ ok: true });
+      case 'ai-apply': return Response.json(aiStore(store).apply(String(input.id)));
+      case 'versions': return Response.json(store.db.prepare('SELECT body FROM draft_versions WHERE id=? ORDER BY version DESC LIMIT 30').all(String(input.id)).map(row => JSON.parse(String(row.body))));
       case 'save': return Response.json(store.saveDraft(input.draft));
       case 'preview': if (typeof input.markdown !== 'string' || input.markdown.length > 100000) throw new Error('본문 길이를 확인하세요.'); return Response.json({ html: renderMarkdown(input.markdown) });
       case 'settings': {

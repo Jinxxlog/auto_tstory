@@ -15,7 +15,7 @@ try {
   const title = `[P1 비공개 테스트] 로컬 웹앱 검증 ${new Date().toISOString()}`;
   await page.getByLabel('제목', { exact: true }).fill(title);
   await page.getByLabel('요약 · 작성 메모').fill('합성 사진으로 원고 저장, 재편집, 사진 순서와 캡션을 검증합니다.');
-  await page.getByLabel('본문', { exact: false }).fill('## 로컬 웹앱 검증\n\nP1 수동 원고 테스트입니다. 특수문자 & < > 를 보존합니다.\n\n- 초안 저장\n- 사진 첨부\n\n```js\nconst sum = (a, b) => a + b;\nconsole.log(sum(2, 3));\n```\n\n| 항목 | 결과 |\n| --- | --- |\n| 공개 범위 | 비공개 |');
+  await page.locator('textarea.markdown').fill('## 로컬 웹앱 검증\n\nP1 수동 원고 테스트입니다. 특수문자 & < > 를 보존합니다.\n\n- 초안 저장\n- 사진 첨부\n\n```js\nconst sum = (a, b) => a + b;\nconsole.log(sum(2, 3));\n```\n\n| 항목 | 결과 |\n| --- | --- |\n| 공개 범위 | 비공개 |');
   await page.locator('input[type=file]:not([webkitdirectory])').setInputFiles([path.resolve('.local/fixtures/p0-image-1.png'), path.resolve('.local/fixtures/p0-image-2.png')]);
   await page.getByLabel('사진 2 설명').waitFor();
   await page.getByLabel('사진 1 설명').fill('첫 번째 파란 테스트 사진');

@@ -3,19 +3,22 @@ import { openStore } from '../src/lib/store';
 import { Publisher, LoginRequired, AttentionRequired } from '../src/services/tistory/publisher';
 import { writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { AiRunner } from '../src/services/ai/runner';
 
 const store = openStore(); const owner = randomUUID(); const publisher = new Publisher();
 let acquired = store.acquire(owner);
 for (let attempt = 0; !acquired && attempt < 16; attempt++) { await new Promise(resolve => setTimeout(resolve, 1000)); acquired = store.acquire(owner); }
 if (!acquired) { console.error('다른 실행기가 이미 실행 중입니다.'); store.db.close(); process.exit(1); }
 let stopped = false;
-const stop = () => { stopped = true; void publisher.close(); };
+const ai = new AiRunner(store);
+const stop = () => { stopped = true; ai.close(); void publisher.close(); };
 process.on('SIGINT', stop); process.on('SIGTERM', stop);
 process.on('message', message => { if (message === 'shutdown') stop(); });
-const heartbeat = setInterval(() => { if (!store.heartbeat(owner)) { stopped = true; void publisher.close(); } }, 3000);
+const heartbeat = setInterval(() => { if (!store.heartbeat(owner)) stop(); }, 3000);
 console.log('로컬 실행기 준비 완료');
 try {
   while (!stopped) {
+    if (await ai.tick()) continue;
     const job = store.claim(owner);
     if (!job) { await new Promise(resolve => setTimeout(resolve, 500)); continue; }
     let submitted = false;
@@ -47,4 +50,4 @@ try {
       console.log(`작업 ${job.id}: ${store.job(job.id).state}`);
     }
   }
-} finally { clearInterval(heartbeat); await publisher.close(); store.release(owner); store.db.close(); if (process.connected) process.disconnect(); }
+} finally { clearInterval(heartbeat); ai.close(); await publisher.close(); store.release(owner); store.db.close(); if (process.connected) process.disconnect(); }
