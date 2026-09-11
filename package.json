@@ -10,6 +10,7 @@
   "scripts": {
     "p0": "tsx scripts/p0.ts",
     "p0:fixtures": "tsx scripts/create-fixtures.ts",
+    "r1:naver": "tsx scripts/r1-naver.ts",
     "typecheck": "tsc --noEmit",
     "test": "tsx --test tests/*.test.ts",
     "test:browser": "tsx scripts/browser-smoke.ts",
