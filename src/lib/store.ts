@@ -4,6 +4,7 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import type { Asset, Draft, Job, Settings } from './model';
 import { normalizeBlogUrl } from '../services/tistory/url';
+import { validateMaterial } from './material';
 
 export const dataRoot = path.resolve(/* turbopackIgnore: true */ process.env.TSTORY_DATA_DIR || path.join(process.cwd(), 'data'));
 export function openStore(root = dataRoot) {
@@ -95,5 +96,5 @@ export function validateDraft(input: unknown): Draft {
   const images = v.images.map(image => { if (!image || typeof image.id !== 'string' || typeof image.caption !== 'string' || image.caption.length > 500) throw new Error('이미지 설명을 확인하세요.'); return { id: image.id, caption: image.caption }; });
   if (new Set(images.map(i => i.id)).size !== images.length) throw new Error('같은 이미지를 중복으로 넣을 수 없습니다.');
   if (v.cover !== null && !images.some(i => i.id === v.cover)) throw new Error('대표 이미지는 원고 사진에서 선택하세요.');
-  return { id: String(v.id), version: Number(v.version), title: String(v.title), kind: v.kind as Draft['kind'], summary: String(v.summary), markdown: String(v.markdown), category: String(v.category), images, cover: v.cover as string | null, updatedAt: '' };
+  return { id: String(v.id), version: Number(v.version), title: String(v.title), kind: v.kind as Draft['kind'], summary: String(v.summary), ...(v.material === undefined ? {} : { material: validateMaterial(v.material) }), markdown: String(v.markdown), category: String(v.category), images, cover: v.cover as string | null, updatedAt: '' };
 }

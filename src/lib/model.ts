@@ -1,5 +1,6 @@
+import type { Material } from './material';
 export type DraftImage = { id: string; caption: string };
-export type Draft = { id: string; version: number; title: string; kind: 'project' | 'technical' | 'ps'; summary: string; markdown: string; category: string; images: DraftImage[]; cover: string | null; updatedAt: string };
+export type Draft = { id: string; version: number; title: string; kind: 'project' | 'technical' | 'ps'; summary: string; material?: Material; markdown: string; category: string; images: DraftImage[]; cover: string | null; updatedAt: string };
 export type Asset = { id: string; name: string; mime: string; size: number; library: boolean };
 export type Settings = { blog: string; categories: string[]; connection: string; checkedAt?: string };
 export type Job = { id: string; kind: 'connect' | 'publish' | 'verify'; state: string; step: string; snapshot: { blog: string; draft?: Draft; postUrl?: string }; result: string | null; createdAt: string; updatedAt: string };

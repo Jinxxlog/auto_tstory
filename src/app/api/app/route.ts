@@ -4,12 +4,14 @@ import { renderMarkdown } from '../../../lib/content';
 import { aiStore } from '../../../lib/ai-store';
 import { styleStore } from '../../../lib/style-store';
 import { importPost } from '../../../services/style/import';
+import { referenceStore } from '../../../services/references';
+import { checkStore } from '../../../services/code-check';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 export async function GET(request: Request) {
   try { checkRequest(request); } catch { return Response.json({ error: '로컬 웹앱에서 접근하세요.' }, { status: 403 }); }
   const store = openStore();
-  try { const ai = aiStore(store); const styles=styleStore(store); return Response.json({ styles:{sources:styles.sources(),profiles:styles.profiles(),jobs:styles.jobs().slice(0,30)}, ai: { connection: ai.connection(), jobs: ai.jobs().slice(0,50) }, settings: store.settings(), drafts: store.drafts(), assets: store.assets(), jobs: store.jobs().map(job => ({ ...job, result: job.result || job.snapshot.postUrl || null })), workerOnline: store.workerOnline() }); } finally { store.db.close(); }
+  try { const ai = aiStore(store); const styles=styleStore(store); return Response.json({ references: referenceStore(store).list(), checks: checkStore(store).list(), styles:{sources:styles.sources(),profiles:styles.profiles(),jobs:styles.jobs().slice(0,30)}, ai: { connection: ai.connection(), jobs: ai.jobs().slice(0,50) }, settings: store.settings(), drafts: store.drafts(), assets: store.assets(), jobs: store.jobs().map(job => ({ ...job, result: job.result || job.snapshot.postUrl || null })), workerOnline: store.workerOnline() }); } finally { store.db.close(); }
 }
 export async function POST(request: Request) {
   try { checkRequest(request, true); } catch { return Response.json({ error: '웹앱에서 다시 요청하세요.' }, { status: 403 }); }
@@ -23,6 +25,9 @@ export async function POST(request: Request) {
   try {
     const input = JSON.parse(body);
     switch (input.action) {
+      case 'reference-fetch': return Response.json(await referenceStore(store).fetch(input.url));
+      case 'reference-paste': return Response.json(referenceStore(store).paste(input.source));
+      case 'code-check': if (!store.workerOnline()) throw new Error('실행기를 먼저 시작하세요.'); return Response.json(checkStore(store).enqueue(store.draft(String(input.id))));
       case 'style-import': if(typeof input.url!=='string')throw new Error('글 URL을 입력하세요.'); return Response.json(await importPost(input.url,store.settings().blog));
       case 'style-source-save': return Response.json(styleStore(store).saveSource(input.source));
       case 'style-source-remove': styleStore(store).removeSource(String(input.id));return Response.json({ok:true});

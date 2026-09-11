@@ -4,6 +4,7 @@ import type { AiConnection, AiJob, AiOutput } from './ai-model';
 import { parseOutput } from '../services/ai/content';
 import { styleStore } from './style-store';
 import { snapshot } from '../services/style/content';
+import { referenceStore } from '../services/references';
 
 export function aiStore(store: ReturnType<typeof openStore>) {
   const db = store.db;
@@ -18,15 +19,18 @@ export function aiStore(store: ReturnType<typeof openStore>) {
   function tx<T>(fn: () => T) { db.exec('BEGIN IMMEDIATE'); try { const result = fn(); db.exec('COMMIT'); return result; } catch (error) { db.exec('ROLLBACK'); throw error; } }
   return { connection, setConnection, jobs, job, put,
     connect() { if (jobs().some(j => j.state === 'running')) throw new Error('생성을 마치거나 취소한 뒤 연결하세요.'); setConnection({ state: 'connecting', message: 'ChatGPT 연결 확인 중', models: [] }); },
-    enqueue(id: string, model: string, selection: string, instruction: string, profileId = '') { const styles=styleStore(store); return tx(() => {
+    enqueue(id: string, model: string, selection: string, instruction: string, profileId = '') { const styles=styleStore(store); const refs=referenceStore(store); return tx(() => {
       const draft = store.draft(id); const status = connection(); const selected = status.models.find(m => m.id === model);
       if (status.state !== 'connected' || !selected) throw new Error('ChatGPT를 연결하고 사용 가능한 모델을 선택하세요.');
-      if (draft.kind !== 'project' || draft.summary.trim().length < 20) throw new Error('프로젝트 유형을 선택하고 실제 구현 내용과 배경을 요약에 20자 이상 적어주세요.');
+      if (draft.kind === 'project' && draft.summary.trim().length < 20) throw new Error('실제 구현 내용과 배경을 요약에 20자 이상 적어주세요.');
+      if (draft.kind === 'technical' && (!draft.material?.topic.trim() || draft.summary.trim().length < 20)) throw new Error('기술 주제와 설명 범위(요약 20자 이상)를 입력하세요.');
+      if (draft.kind === 'ps' && (!draft.material || draft.material.problem.trim().length < 20 || !draft.material.constraints.trim() || !draft.material.language.trim())) throw new Error('문제 본문(20자 이상)·제약 조건·언어를 입력하세요. URL을 가져온 경우에도 문제 조건을 확인해 입력하세요.');
+      const references = (draft.material?.referenceIds || []).map(refs.get);
       if (draft.images.length && !selected.images) throw new Error('사진 입력을 지원하는 모델을 선택하세요.');
       if (selection.length > 20000 || instruction.length > 4000 || (selection && (!instruction.trim() || draft.markdown.split(selection).length !== 2))) throw new Error('부분 재작성 구간은 본문에서 한 번만 등장해야 하며 수정 요청이 필요합니다.');
       const existing = jobs().find(j => j.draft.id === id && ['queued','running'].includes(j.state)); if (existing) return existing;
       const profile=profileId?styles.profiles().find(p=>p.id===profileId):undefined;if(profileId&&!profile)throw new Error('선택한 문체가 없습니다.');
-      const value: AiJob = { id: randomUUID(), state: 'queued', step: '생성 대기', draft, model, selection, instruction, ...(profile?{style:snapshot(profile,draft.kind)}:{}), attempts: 0, cancel: false, createdAt: new Date().toISOString() }; put(value); return value;
+      const value: AiJob = { id: randomUUID(), state: 'queued', step: '생성 대기', draft, model, selection, instruction, references, ...(profile?{style:snapshot(profile,draft.kind)}:{}), attempts: 0, cancel: false, createdAt: new Date().toISOString() }; put(value); return value;
     }); },
     cancel(id: string) { const value = job(id); if (!['queued','running'].includes(value.state)) throw new Error('진행 중인 생성만 취소할 수 있습니다.'); put({ ...value, cancel: true, ...(value.state === 'queued' ? { state: 'cancelled' as const, step: '취소됨' } : { step: '취소 요청 중' }) }); },
     retry(id: string) { return tx(() => { const value = job(id); if (value.state !== 'failed' || value.attempts >= 2) throw new Error('재시도는 실패한 작업당 한 번만 가능합니다.'); if (jobs().some(j => j.draft.id === value.draft.id && ['queued','running'].includes(j.state))) throw new Error('이 원고의 다른 생성을 먼저 마치세요.'); put({ ...value, state: 'queued', cancel: false, step: '재시도 대기' }); }); },

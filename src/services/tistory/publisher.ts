@@ -1,5 +1,6 @@
 import type { Job } from '../../lib/model';
 import { renderMarkdown } from '../../lib/content';
+import { load } from 'cheerio';
 import { assetPath } from '../../lib/assets';
 import { TistoryProbe } from './probe';
 import type { Dialog, Page } from 'playwright';
@@ -141,7 +142,10 @@ export class Publisher {
     const probe = this.probe?.blog === blog ? this.probe : await this.connect(blog);
     // Read-only checks use a separate tab: an editor's beforeunload prompt must
     // not discard a potentially edited draft just to inspect the saved post.
-    if (!this.verificationPage || this.verificationPage.isClosed()) this.verificationPage = await probe.context.newPage();
+    // The next publication can reuse the last tab through probe.page(). Never
+    // navigate that tab away once it has become an editor, even after a save.
+    const verificationIsEditor = this.verificationPage && !this.verificationPage.isClosed() && /^\/manage\/(?:post(?:\/|$)|newpost)/.test(new URL(this.verificationPage.url()).pathname);
+    if (!this.verificationPage || this.verificationPage.isClosed() || verificationIsEditor) this.verificationPage = await probe.context.newPage();
     const page = this.verificationPage;
     await page.goto(`${blog}/manage`, { waitUntil: 'domcontentloaded' });
     if (new URL(page.url()).origin !== blog) throw new LoginRequired('전용 Chrome에서 티스토리에 로그인한 뒤 재개하세요.');
@@ -149,6 +153,18 @@ export class Publisher {
     await probe.persistIfAuthenticated();
     await page.goto(postUrl, { waitUntil: 'domcontentloaded' });
     await page.getByRole('heading', { name: draft.title, exact: true }).waitFor();
+    if (draft.kind !== 'project') {
+      const expected = load(renderMarkdown(draft.markdown));
+      const article = page.locator('.tt_article_useless_p_margin, .contents_style, #article-view').first();
+      if (!await article.count()) throw new AttentionRequired('현재 스킨에서 기술·PS 본문 영역을 확인하지 못했습니다.');
+      const normalize = (text: string) => text.replace(/\r\n/g, '\n').replace(/\u00a0/g, ' ').trim();
+      const codes = expected('pre').toArray().map(el => normalize(expected(el).text()));
+      const actualCodes = (await article.locator('pre').allTextContents()).map(normalize);
+      if (codes.length !== actualCodes.length || codes.some((code, i) => code !== actualCodes[i])) throw new AttentionRequired('저장된 코드 블록의 내용·줄바꿈을 확인해주세요.');
+      const cells = expected('table th, table td').toArray().map(el => normalize(expected(el).text()));
+      const actualCells = (await article.locator('table th, table td').evaluateAll(cells => cells.filter(cell => !cell.closest('.another_category, .container_postbtn')).map(cell => cell.textContent || ''))).map(normalize);
+      if (cells.length !== actualCells.length || cells.some((cell, i) => cell !== actualCells[i])) throw new AttentionRequired('저장된 표 내용을 확인해주세요.');
+    }
     const photos = page.locator('figure img');
     if (await photos.count() !== draft.images.length) throw new AttentionRequired('글은 저장되었지만 사진 개수가 다릅니다. 글 관리에서 확인하세요.');
     const dimensions = await Promise.all(draft.images.map(async image => { const meta = await sharp(assetPath(image.id)).metadata(); return { width: meta.width, height: meta.height }; }));
