@@ -6,6 +6,8 @@ import type { AiConnection, AiJob } from '../../lib/ai-model';
 import { assetPath } from '../../lib/assets';
 import { outputSchema, parseOutput, prompt } from './content';
 import type { WritingProvider } from './provider';
+import type { StyleJob } from '../../lib/style-model';
+import { analysisPrompt, styleSchema, parseStyle } from '../style/content';
 
 type Message = { id?: number | string; method?: string; params?: any; result?: any; error?: { code: number; message: string } };
 export class CodexError extends Error {}
@@ -65,6 +67,14 @@ export class CodexClient implements WritingProvider {
     return url.href;
   }
   async generate(job: AiJob, signal: AbortSignal) {
+    const result=await this.complete(job,signal,prompt(job),outputSchema);
+    return {output:parseOutput(result.text,job),usage:result.usage};
+  }
+  async analyze(job: StyleJob, signal: AbortSignal) {
+    const result=await this.complete({model:job.model,draft:{images:[]}},signal,analysisPrompt(job),styleSchema);
+    return {output:parseStyle(result.text),usage:result.usage};
+  }
+  private async complete(job: {model:string;draft:{images:{id:string}[]}}, signal: AbortSignal, text: string, schema: object) {
     const status = await this.status();
     if (status.state !== 'connected') throw new CodexError('ChatGPT 연결 화면에서 로그인한 뒤 재시도하세요.');
     if (!status.limits?.length) throw new CodexError('구독 사용 한도를 확인하지 못해 생성을 중단했습니다. 연결을 새로고침하세요.');
@@ -91,10 +101,10 @@ export class CodexClient implements WritingProvider {
     // Observe early completion/rejection while turn/start is awaiting its response.
     void result.catch(() => {});
     try {
-      const input = [{ type: 'text', text: prompt(job) }, ...job.draft.images.map(image => ({ type: 'localImage', path: assetPath(image.id) }))];
-      const started = await this.call('turn/start', { threadId, input, outputSchema, effort: 'low', serviceTierForTurn: 'default' }); turnId = started.turn.id;
+      const input = [{ type: 'text', text }, ...job.draft.images.map(image => ({ type: 'localImage', path: assetPath(image.id) }))];
+      const started = await this.call('turn/start', { threadId, input, outputSchema:schema, effort: 'low', serviceTierForTurn: 'default' }); turnId = started.turn.id;
       if (signal.aborted) abort();
-      return { output: parseOutput(await result, job), usage };
+      return { text: await result, usage };
     } finally { clearTimeout(timer); signal.removeEventListener('abort', abort); this.listeners.delete(listener); await this.call('thread/archive', { threadId }, 5000).catch(() => {}); }
   }
   private rejectPending() { for (const p of this.pending.values()) { clearTimeout(p.timer); p.reject(new CodexError('Codex 연결이 종료되었습니다. 설치 상태를 확인하고 다시 연결하세요.')); } this.pending.clear(); for (const listener of this.listeners) listener({ method: 'transport/closed' }); }

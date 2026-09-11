@@ -2,12 +2,14 @@ import { openStore } from '../../../lib/store';
 import { checkRequest } from '../../../lib/security';
 import { renderMarkdown } from '../../../lib/content';
 import { aiStore } from '../../../lib/ai-store';
+import { styleStore } from '../../../lib/style-store';
+import { importPost } from '../../../services/style/import';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 export async function GET(request: Request) {
   try { checkRequest(request); } catch { return Response.json({ error: '로컬 웹앱에서 접근하세요.' }, { status: 403 }); }
   const store = openStore();
-  try { const ai = aiStore(store); return Response.json({ ai: { connection: ai.connection(), jobs: ai.jobs().slice(0,50) }, settings: store.settings(), drafts: store.drafts(), assets: store.assets(), jobs: store.jobs().map(job => ({ ...job, result: job.result || job.snapshot.postUrl || null })), workerOnline: store.workerOnline() }); } finally { store.db.close(); }
+  try { const ai = aiStore(store); const styles=styleStore(store); return Response.json({ styles:{sources:styles.sources(),profiles:styles.profiles(),jobs:styles.jobs().slice(0,30)}, ai: { connection: ai.connection(), jobs: ai.jobs().slice(0,50) }, settings: store.settings(), drafts: store.drafts(), assets: store.assets(), jobs: store.jobs().map(job => ({ ...job, result: job.result || job.snapshot.postUrl || null })), workerOnline: store.workerOnline() }); } finally { store.db.close(); }
 }
 export async function POST(request: Request) {
   try { checkRequest(request, true); } catch { return Response.json({ error: '웹앱에서 다시 요청하세요.' }, { status: 403 }); }
@@ -21,10 +23,18 @@ export async function POST(request: Request) {
   try {
     const input = JSON.parse(body);
     switch (input.action) {
+      case 'style-import': if(typeof input.url!=='string')throw new Error('글 URL을 입력하세요.'); return Response.json(await importPost(input.url,store.settings().blog));
+      case 'style-source-save': return Response.json(styleStore(store).saveSource(input.source));
+      case 'style-source-remove': styleStore(store).removeSource(String(input.id));return Response.json({ok:true});
+      case 'style-analyze': { const ai=aiStore(store).connection();if(ai.state!=='connected'||!ai.models.some(m=>m.id===input.model))throw new Error('ChatGPT를 연결하고 모델을 선택하세요.');return Response.json(styleStore(store).enqueue(input.ids,input.model,input.name,input.kind)); }
+      case 'style-cancel': styleStore(store).cancel(String(input.id));return Response.json({ok:true});
+      case 'style-retry': styleStore(store).retry(String(input.id));return Response.json({ok:true});
+      case 'style-profile-save': return Response.json(styleStore(store).saveProfile(input.profile));
+      case 'style-history': return Response.json(styleStore(store).history(String(input.id)));
       case 'ai-connect': aiStore(store).connect(); return Response.json({ ok: true });
       case 'ai-generate': {
         if (typeof input.id !== 'string' || typeof input.model !== 'string' || typeof input.selection !== 'string' || typeof input.instruction !== 'string') throw new Error('생성 입력을 확인하세요.');
-        return Response.json(aiStore(store).enqueue(input.id, input.model, input.selection, input.instruction));
+        return Response.json(aiStore(store).enqueue(input.id, input.model, input.selection, input.instruction, typeof input.profileId==='string'?input.profileId:''));
       }
       case 'ai-cancel': aiStore(store).cancel(String(input.id)); return Response.json({ ok: true });
       case 'ai-retry': aiStore(store).retry(String(input.id)); return Response.json({ ok: true });

@@ -2,3 +2,5 @@
 [hidden]{display:none!important}
 
 .ai-panel{margin:20px 0}.ai-panel details{margin:16px 0}.ai-panel summary{cursor:pointer;font-weight:600}.ai-result{border-top:1px solid #e5e4df;margin-top:24px;padding-top:18px}.ai-result textarea{font-family:inherit}.ai-panel .usage{display:block;margin:5px 0;color:#646c64}.login-link{display:inline-block;padding:10px 14px;background:#e6eee6;border-radius:8px}.ai-panel .button-row{flex-wrap:wrap}.ai-panel textarea{max-width:100%}
+
+.style-workspace{display:grid;gap:20px}.style-workspace fieldset{border:0;padding:0;margin:0;min-width:0}.source-row{border-bottom:1px solid #eee;padding:10px 0}.source-row input[type=checkbox]{width:auto;margin-right:10px}.style-workspace pre{white-space:pre-wrap;overflow-wrap:anywhere}.style-compare{display:grid;grid-template-columns:1fr 1fr;gap:16px}.style-workspace small{display:block}.style-workspace button{margin:4px}.style-workspace .notice{position:sticky;bottom:12px}@media(max-width:700px){.style-compare{grid-template-columns:1fr}}
