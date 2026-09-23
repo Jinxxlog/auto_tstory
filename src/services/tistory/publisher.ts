@@ -225,6 +225,7 @@ export class Publisher {
     }
     const photos = article.locator('figure img');
     if (await photos.count() !== draft.images.length) throw new AttentionRequired('글은 저장되었지만 사진 개수가 다릅니다. 글 관리에서 확인하세요.');
+    if (draft.images.length && (!job.snapshot.imagePaths || job.snapshot.imagePaths.length !== draft.images.length)) throw new AttentionRequired('사진 식별자 기록이 없어 원고 사진의 일치와 순서를 확정할 수 없습니다. 자동으로 성공 처리하지 않습니다.');
     if (job.snapshot.imagePaths) {
       const paths = await photos.evaluateAll(images => images.map(image => new URL((image as HTMLImageElement).src).pathname));
       if (paths.some(value => value === '/tistory_admin/static/images/pc-image-censoring-v1.gif')) throw new AttentionRequired('글은 비공개로 저장되었지만 일부 사진이 티스토리 검토 안내로 표시됩니다. 같은 글에서 저장 결과를 재확인하세요. 자동 재발행하지 않습니다.');

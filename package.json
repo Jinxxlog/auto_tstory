@@ -33,7 +33,9 @@
     "backup:list": "tsx scripts/backup.ts list",
     "backup:verify": "tsx scripts/backup.ts verify",
     "restore": "tsx scripts/backup.ts restore",
-    "test:writing": "tsx scripts/web-writing-check.ts"
+    "test:writing": "tsx scripts/web-writing-check.ts",
+    "test:publish-recovery": "tsx scripts/publish-recovery-check.ts --recovery-test",
+    "test:publish-recovery:live": "tsx scripts/publish-recovery-live.ts --recovery-test --private-test"
   },
   "dependencies": {
     "cheerio": "1.2.0",
