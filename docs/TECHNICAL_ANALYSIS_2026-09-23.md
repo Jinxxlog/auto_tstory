@@ -12,7 +12,7 @@
 
 ## 2. GitHub 공개 여부와 주소
 
-기존 저장소: [Jinxxlog/auto_tstory](https://github.com/Jinxxlog/auto_tstory). GitHub API에서 공개 상태를 확인했고 기존 remote main과 로컬 시작 HEAD가 같았다. 미커밋 구현을 포함한 공개 대상은 검사 후 업로드하며 최종 커밋/업로드 결과는 PROJECT_PLAN 이번 작업 기록을 따른다. 라이선스 파일은 없고 `package.json`의 `UNLICENSED`를 유지했다. 라이선스 신규 선택 및 기록 재작성 없음.
+기존 저장소: [Jinxxlog/auto_tstory](https://github.com/Jinxxlog/auto_tstory). GitHub API에서 공개 상태를 확인했고 기존 remote main과 로컬 시작 HEAD가 같았다. 미커밋 구현과 새 문서를 검사한 뒤 [e4ec626](https://github.com/Jinxxlog/auto_tstory/commit/e4ec62681b19d54719ff100bc2d4dd9185f848bc)으로 main에 push하고 원격 ref 일치를 확인했다. 라이선스 파일은 없고 `package.json`의 `UNLICENSED`를 유지했다. 라이선스 신규 선택 및 기록 재작성 없음.
 
 ## 3. 비밀정보 검사 결과
 
@@ -77,7 +77,7 @@
 | tsx 4.23.13 | scripts, tests, worker | TS를 Node에서 실행 | npm scripts, run.mjs `--import tsx` | 실행 의존성/개발 의존성 차이 | worker 사전 컴파일은 선택사항 |
 | node:test/assert | tests | 회귀 방어 | tsx --test, assert | 단위/통합/계약 테스트 차이 | 원자성·공급자 실패 테스트 보강 |
 | Docker CLI | code-check | 사용자/AI Python 코드 격리 | spawn('docker',args) | 컨테이너 제한과 호스트 보호 | 실제 Docker 인수 후 지원 확정 |
-| GitHub Actions·npm lockfile | .github/workflows/ci.yml | Windows 검사 자동화 정의 | push/PR→typecheck/test/build/install check | CI와 배포 차이 | 원격 성공 확인, UI 작업 추가, action SHA 고정 검토 |
+| GitHub Actions·npm lockfile | .github/workflows/ci.yml | Windows 검사 자동화 | push/PR→typecheck/test/build/install check; e4ec626 원격 성공 | CI와 배포 차이 | UI 작업 추가, action SHA 고정 검토 |
 
 **핵심**: React/Next, TS/Node, SQLite 큐·버전, Playwright, Codex 계약. **보조**: Markdown/정제, Cheerio/Sharp, 설치·백업·검사 도구. 선언된 직접 패키지에서 사용 근거가 전혀 없는 항목은 발견하지 못했다. React DOM은 Next를 통한 간접 사용이며 미사용으로 제거하면 안 된다. @types는 타입 검사에만 쓰인다. `npm ls`의 extraneous 2개는 Sharp 설치 잔여/선택 의존성 성격으로, 원인 확인 전 직접 패키지로 소개하거나 제거하지 않는다.
 
@@ -219,14 +219,14 @@ Node 22.20.0, 동일 PC, 새 격리 SQLite, 원고당 본문 10,000 ASCII 문자
 | 입력/예외 | 서버 검증·요청 byte 상한·취소/timeout/미확정 상태 | 저장 단계별 오류·공급자 프로토콜 모의 테스트 확대 |
 | 정적 분석 | TypeScript 및 추가 `--noUnusedLocals --noUnusedParameters` 통과, 별도 ESLint/format/coverage threshold 없음. export의 실제 외부 사용까지 증명하는 검사는 아님 | 복잡한 모듈부터 규칙/가독성 점검 |
 | 빌드/의존성 | build와 tracing 9개 검사 통과, 운영 npm audit 0 | 감사 결과의 시점과 범위를 기록 |
-| CI | Windows workflow 정의 있음, 외부 계정 불필요 검사 | 원격 실행 결과 확인, 설치/런타임 의존성 검증 |
+| CI | e4ec626의 [원격 Windows 실행](https://github.com/Jinxxlog/auto_tstory/actions/runs/35829679016) 성공: 의존성·타입·테스트·빌드·추적·새 설치 API 검사 | UI 회귀를 CI로 확대, 실제 사용자 PC 인수는 별도 |
 | CD/릴리스 | 자동 배포/release artifact/서명 없음 | 소스 공개와 제품 설치 배포 구분; 라이선스/고지 결정 |
 | 로그/오류 수집 | 로컬 lifecycle/작업 state/진단, 외부 Sentry 등 없음 | 비밀 제외·보존 정책부터; 자동 외부 업로드 금지 |
 | 성능 모니터링 | 상시 지표 없음; 이번 합성 GET 측정만 | 위 계측점 도입·동일 조건 전후 비교 |
 | Git/버전 | main·remote·lockfile·CHANGELOG. 시작 시 대규모 미커밋 변경 | 기능별 검토 가능한 커밋, 현재 배포 식별 |
 | 롤백 | 안전 백업·복원 보존 폴더 존재; 자동 업데이트/앱 downgrade 없음 | 코드+DB 호환 조합 검증; git checkout만으로 DB rollback 불가 |
 
-개발자가 작성한 회귀 스크립트가 있는 것과 오늘 실행한 것은 다르다. 이번에 설치/Docker/외부 계정 검사를 새로 하지 않은 이유는 기존 의존성을 바꾸거나 계정 자료/외부 글에 영향을 주지 않고 진단하는 범위를 유지하기 위해서다. 타입 검사는 런타임 동작 보증이 아니며 test:writing은 실제 AI 성공을 증명하지 않는다.
+개발자가 작성한 회귀 스크립트가 있는 것과 오늘 실행한 것은 다르다. 로컬 설치/Docker/외부 계정 검사는 기존 환경·계정 자료·외부 글에 영향을 주지 않는 진단 범위를 유지하기 위해 재실행하지 않았다. 업로드 후 원격 Windows CI에서는 합성 새 설치/API 검사가 실제 통과했다. 이는 다른 사용자의 PC나 실제 외부 로그인/발행 인수와 다르다. 타입 검사는 런타임 동작 보증이 아니며 test:writing은 실제 AI 성공을 증명하지 않는다.
 
 ### 블로그 프로젝트 특화 결론
 

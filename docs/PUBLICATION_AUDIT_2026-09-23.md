@@ -2,13 +2,14 @@
 
 ## 범위와 결론
 
-대상은 기존 `Jinxxlog/auto_tstory`의 로컬 main과 미커밋 R0.1/R7.1/R2/R3 변경이다. 시작 HEAD/원격 main은 `f460832d71e9e76e7ebe3d3c3b541109fdb54734`. GitHub API의 `private: false`와 원격 ref를 직접 확인했다. 새 저장소를 만들거나 과거 기록을 변경하지 않는다. 최종 업로드 결과는 PROJECT_PLAN의 이번 작업 기록 및 GitHub 커밋을 기준으로 확인한다.
+대상은 기존 `Jinxxlog/auto_tstory`의 로컬 main과 미커밋 R0.1/R7.1/R2/R3 변경이다. 시작 HEAD/원격 main은 `f460832d71e9e76e7ebe3d3c3b541109fdb54734`. GitHub API의 `private: false`와 원격 ref를 직접 확인했다. 검사한 소스와 문서는 [e4ec626](https://github.com/Jinxxlog/auto_tstory/commit/e4ec62681b19d54719ff100bc2d4dd9185f848bc)으로 기존 공개 main에 push했고 `git ls-remote` 일치를 확인했다. 새 저장소 생성·기록 재작성·force push 없음. 이후 문서 마감 커밋은 Git 이력에서 확인할 수 있다.
 
 자체 정규식 검사와 경로·호출부 검토에서 **공개 대상 및 기존 도달 가능한 13개 커밋/138개 고유 blob의 비밀값 탐지 0건**. 이는 알려지지 않은 형식까지 비밀정보 부재를 보증하는 결과가 아니다. 이번에 발견한 인증정보는 모두 Git 제외 경로에 있으며 값을 출력하거나 복사하지 않았다.
 
 ## 방법과 한계
 
-- 최초 공개 후보 109개 경로의 텍스트 검토 및 바이너리 유무 검사. 문서 추가 후 최종 stage를 다시 검사한다.
+- 최초 공개 후보 109개 경로의 텍스트 검토 및 바이너리 유무 검사 후 문서 추가와 최종 stage 재검사를 수행했다.
+- 최종 Git index의 **111개 파일 내용**을 다시 검사해 비밀값 패턴·개인 자료 경로·바이너리 0개, 새 문서/README의 깨진 로컬 링크 0개를 확인했다. `.local/publication-stage-audit.json`에 값 없는 집계 보관. `git diff --cached --check` 통과.
 - 프로젝트에서 생성물·의존성·일부 브라우저 캐시를 제외한 5,572개 파일 경로를 순회하고 32MiB 이하 파일 내용에서 키·JWT·암호 리터럴·접속 URL·서비스 계정 패턴을 검사. 32MiB 초과 16개는 내용 검사 제외. `.git`, `node_modules`, `.next`, out/dist, Cache/Code Cache/GPU 계열 캐시는 범위 밖이며 공개 대상에서도 제외한다.
 - `git rev-list --all`과 각 commit의 `git ls-tree`/`git cat-file`로 현재 파일에서 삭제된 blob도 검사. reflog·도달 불가능 객체·다른 사람의 fork/별도 원격 branch는 완전 조사 대상이 아니다. 현재 원격 main은 로컬 HEAD와 같음을 확인했다.
 - API/provider 키, PEM private key, JWT, credential-bearing DB URL, 문자 리터럴 secret, Firebase service account, `.env`, 인증 파일, Android keystore/key.properties, Apple 인증서/provisioning 패턴을 확인. 원본 내용이나 일치 문자열을 로그로 내보내지 않는 검사다.
@@ -58,6 +59,7 @@
 | UI/HTTP 회귀 | `npm run test:writing` 통과: 3유형 모의 생성/편집/재작성/비공개 큐, 390px 가로 넘침 없음. 외부 생성·발행 없음 |
 | 복구 UI 회귀 | `npx tsx scripts/web-recovery-check.ts` 통과: URL/후보/미발행 종료, 다른 글·공개 글 거절, 모의 읽기 요청만 발생. 실제 티스토리 검증 아님 |
 | 합성 진단 | `.local/analysis-check.ts`: 전체 상태 조회 증가 측정 및 사진 적용 중 상태 기록 실패 재현. 결과는 기술 분석 보고서 참조 |
-| 이번 미실행 | 실제 AI 로그인/생성·실제 블로그 게시/재확인·Docker·다른 PC·설치 재검증. 계정/원본 자료 변경이나 불필요한 사용량 소비가 필요한 범위로 기존 기록과 구분 |
+| 원격 CI | 커밋 e4ec626의 [GitHub Actions 실행](https://github.com/Jinxxlog/auto_tstory/actions/runs/35829679016) `success`. Windows에서 npm ci·타입·테스트·빌드·자료 추적 제외·별도 소스 설치/개발 의존성 제거 후 API 실행 인수 모두 통과 |
+| 이번 미실행 | 실제 AI 로그인/생성·실제 블로그 게시/재확인·Docker·다른 사용자 PC 인수. 로컬 설치 재실행은 하지 않았으며 원격 CI의 합성 새 설치 검사와 구분 |
 
 최초 네트워크 조회는 sandbox 소켓 제한으로 실패했다. 허용된 네트워크 실행으로 동일한 읽기 요청을 재실행해 공개 여부/remote ref/npm 감사를 확인했으며 GitHub 인증을 우회하지 않았다.
