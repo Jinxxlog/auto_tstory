@@ -18,6 +18,10 @@ storage-state.json
 # User content, local database and diagnostics
 data/
 backups/
+*.before-restore-*/
+*.failed-restore-*/
+.restore-*/
+.creating-*/
 *.db
 *.db-*
 *.sqlite
@@ -34,3 +38,20 @@ blob-report/
 .DS_Store
 Thumbs.db
 Desktop.ini
+
+# Local editor settings and credential bundles (never publish real values)
+.idea/
+.vscode/
+*.swp
+*.swo
+*.keystore
+*.jks
+key.properties
+*.p12
+*.pfx
+*.mobileprovision
+*.provisionprofile
+*.pem
+*.key
+*service-account*.json
+*firebase-adminsdk*.json

@@ -6,7 +6,7 @@ import { validateDraft } from './store';
 export type AuditFinding = { level: 'error' | 'warning'; code: string; count: number; message: string };
 export type AuditReport = { checkedAt: string; integrity: boolean; counts: Record<string, number>; findings: AuditFinding[] };
 
-const stateTables = ['ai_jobs', 'style_jobs', 'code_checks'];
+const stateTables = ['ai_jobs', 'style_jobs', 'code_checks', 'photo_jobs'];
 function tables(db: DatabaseSync) { return new Set(db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all().map(row => String(row.name))); }
 
 export async function auditData(root: string): Promise<AuditReport> {

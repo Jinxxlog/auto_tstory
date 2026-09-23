@@ -1,7 +1,10 @@
+import { expandedKind, outlineReviewed } from './writing';
+import { validateDraft } from './store';
 import { randomUUID } from 'node:crypto';
 import type { openStore } from './store';
 import type { AiConnection, AiJob, AiOutput } from './ai-model';
-import { parseOutput } from '../services/ai/content';
+import { parseOutput, applyOutputToBlocks } from '../services/ai/content';
+import { draftBlocks, maxRequestImages } from './blocks';
 import { styleStore } from './style-store';
 import { snapshot } from '../services/style/content';
 import { referenceStore } from '../services/references';
@@ -19,18 +22,32 @@ export function aiStore(store: ReturnType<typeof openStore>) {
   function tx<T>(fn: () => T) { db.exec('BEGIN IMMEDIATE'); try { const result = fn(); db.exec('COMMIT'); return result; } catch (error) { db.exec('ROLLBACK'); throw error; } }
   return { connection, setConnection, jobs, job, put,
     connect() { if (jobs().some(j => j.state === 'running')) throw new Error('생성을 마치거나 취소한 뒤 연결하세요.'); setConnection({ state: 'connecting', message: 'ChatGPT 연결 확인 중', models: [] }); },
-    enqueue(id: string, model: string, selection: string, instruction: string, profileId = '') { const styles=styleStore(store); const refs=referenceStore(store); return tx(() => {
+    enqueue(id: string, model: string, selection: string, instruction: string, profileId = '@blog', targetBlockId = '') { const styles=styleStore(store); const refs=referenceStore(store); return tx(() => {
       const draft = store.draft(id); const status = connection(); const selected = status.models.find(m => m.id === model);
       if (status.state !== 'connected' || !selected) throw new Error('ChatGPT를 연결하고 사용 가능한 모델을 선택하세요.');
       if (draft.kind === 'project' && draft.summary.trim().length < 20) throw new Error('실제 구현 내용과 배경을 요약에 20자 이상 적어주세요.');
       if (draft.kind === 'technical' && (!draft.material?.topic.trim() || draft.summary.trim().length < 20)) throw new Error('기술 주제와 설명 범위(요약 20자 이상)를 입력하세요.');
       if (draft.kind === 'ps' && (!draft.material || draft.material.problem.trim().length < 20 || !draft.material.constraints.trim() || !draft.material.language.trim())) throw new Error('문제 본문(20자 이상)·제약 조건·언어를 입력하세요. URL을 가져온 경우에도 문제 조건을 확인해 입력하세요.');
-      const references = (draft.material?.referenceIds || []).map(refs.get);
-      if (draft.images.length && !selected.images) throw new Error('사진 입력을 지원하는 모델을 선택하세요.');
+      const target = targetBlockId ? draftBlocks(draft).find(block => block.id === targetBlockId) : undefined;
+      if (targetBlockId && (draft.schemaVersion !== 2 || !target || target.locked || !instruction.trim() || selection)) throw new Error('잠기지 않은 블록과 수정 요청을 선택하세요.');
+      if (selection && draftBlocks(draft).some(block => block.locked && (block.type === 'text' ? block.markdown : block.description).includes(selection))) throw new Error('잠근 블록은 재작성할 수 없습니다.');
+      if (expandedKind(draft.kind) && !selection && !targetBlockId) {
+        if (!draft.summary.trim()) throw new Error('하고 싶은 이야기나 요약을 입력하세요.');
+        if (draft.kind === 'travel' && !draft.writing?.place.trim()) throw new Error('여행 장소를 입력하세요. 모르는 날짜·비용은 비워둘 수 있습니다.');
+        if (draft.kind === 'information' && (!draft.material?.topic.trim() || !draft.writing?.audience.trim() || !draft.writing?.scope.trim())) throw new Error('정보 주제·독자·설명 범위를 입력하세요.');
+        if (!outlineReviewed(draft)) throw new Error('개요와 사진 배치를 검토하고 저장한 뒤 전체 초안을 생성하세요.');
+      }
+      const requestImages = targetBlockId ? (target?.type === 'image' ? [target] : []) : draft.images;
+      const references = (['technical', 'ps', 'information'].includes(draft.kind) ? draft.material?.referenceIds || [] : []).map(refs.get);
+      if (requestImages.length && !selected.images) throw new Error('사진 입력을 지원하는 모델을 선택하세요.');
+      if (requestImages.length > maxRequestImages) throw new Error('한 번의 초안 생성은 사진 10장까지 지원합니다. 사진 분석은 묶음별로 선택해 진행하세요.');
+      if (selection && draft.schemaVersion === 2 && !draftBlocks(draft).some(block => (block.type === 'text' ? block.markdown : block.description).includes(selection))) throw new Error('부분 재작성은 하나의 본문 또는 사진 설명 안에서 선택하세요.');
       if (selection.length > 20000 || instruction.length > 4000 || (selection && (!instruction.trim() || draft.markdown.split(selection).length !== 2))) throw new Error('부분 재작성 구간은 본문에서 한 번만 등장해야 하며 수정 요청이 필요합니다.');
       const existing = jobs().find(j => j.draft.id === id && ['queued','running'].includes(j.state)); if (existing) return existing;
+      if (profileId === '@blog') profileId = draft.styleProfileId === 'none' ? '' : (draft.styleProfileId && draft.styleProfileId !== '@blog' ? draft.styleProfileId : '') || styles.defaults()[draft.kind] || '';
+      if (profileId === 'none') profileId = '';
       const profile=profileId?styles.profiles().find(p=>p.id===profileId):undefined;if(profileId&&!profile)throw new Error('선택한 문체가 없습니다.');
-      const value: AiJob = { id: randomUUID(), state: 'queued', step: '생성 대기', draft, model, selection, instruction, references, ...(profile?{style:snapshot(profile,draft.kind)}:{}), attempts: 0, cancel: false, createdAt: new Date().toISOString() }; put(value); return value;
+      const value: AiJob = { id: randomUUID(), state: 'queued', step: '생성 대기', draft, model, selection, ...(targetBlockId ? { targetBlockId } : {}), instruction, references, ...(profile?{style:snapshot(profile,draft.kind)}:{}), attempts: 0, cancel: false, createdAt: new Date().toISOString() }; put(value); return value;
     }); },
     cancel(id: string) { const value = job(id); if (!['queued','running'].includes(value.state)) throw new Error('진행 중인 생성만 취소할 수 있습니다.'); put({ ...value, cancel: true, ...(value.state === 'queued' ? { state: 'cancelled' as const, step: '취소됨' } : { step: '취소 요청 중' }) }); },
     retry(id: string) { return tx(() => { const value = job(id); if (value.state !== 'failed' || value.attempts >= 2) throw new Error('재시도는 실패한 작업당 한 번만 가능합니다.'); if (jobs().some(j => j.draft.id === value.draft.id && ['queued','running'].includes(j.state))) throw new Error('이 원고의 다른 생성을 먼저 마치세요.'); put({ ...value, state: 'queued', cancel: false, step: '재시도 대기' }); }); },
@@ -39,8 +56,8 @@ export function aiStore(store: ReturnType<typeof openStore>) {
       const value = job(id); if (value.state !== 'succeeded' || !value.output || value.appliedVersion) throw new Error('적용 가능한 생성 결과가 없습니다.');
       const current = store.draft(value.draft.id); if (current.version !== value.draft.version) throw new Error('생성 후 원고가 수정되었습니다. 결과를 복사하거나 최신 원고로 다시 생성하세요.');
       // Validate persisted output without applying the selection replacement a second time.
-      const output = parseOutput(JSON.stringify(value.output), { ...value, selection: '' });
-      const saved = { ...current, title: output.title, markdown: output.markdown, images: current.images.map(i => ({ ...i, caption: output.captions.find(c => c.id === i.id)!.caption })), version: current.version+1, updatedAt: new Date().toISOString() };
+      const output = parseOutput(JSON.stringify(value.output), value, true);
+      const saved = { ...validateDraft(applyOutputToBlocks(current, output, value.selection, value.targetBlockId)), version: current.version+1, updatedAt: new Date().toISOString() };
       db.prepare('INSERT OR IGNORE INTO draft_versions VALUES (?,?,?)').run(current.id, current.version, JSON.stringify(current));
       db.prepare('UPDATE documents SET body=? WHERE id=?').run(JSON.stringify(saved), saved.id);
       db.prepare('INSERT INTO draft_versions VALUES (?,?,?)').run(saved.id, saved.version, JSON.stringify(saved));

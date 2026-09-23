@@ -1,5 +1,9 @@
-import type { NextConfig } from 'next';
-const config: NextConfig = {
+/** @type {import('next').NextConfig} */
+const config = {
+  turbopack: { root: process.cwd() },
+  outputFileTracingExcludes: {
+    '/**': ['data/**/*', 'backups/**/*', '.local/**/*', '*.before-restore-*/**/*', '*.failed-restore-*/**/*', '.restore-*/**/*', '.creating-*/**/*', '.env*'],
+  },
   serverExternalPackages: ['sharp'],
   async headers() { return [{ source: '/:path*', headers: [
     { key: 'X-Content-Type-Options', value: 'nosniff' },

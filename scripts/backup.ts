@@ -19,5 +19,7 @@ if (command === 'create') {
   const directory = process.argv[3];
   if (!directory || !process.argv.includes('--confirm-replace-local-data')) throw new Error('사용법: npm run restore -- <백업 폴더> --confirm-replace-local-data');
   const result = await restoreBackup(directory, dataRoot, backupRoot);
-  console.log(`복원 완료: ${result.restoredFrom}`); console.log(`복원 직전 안전 백업: ${result.safetyBackup}`); console.log(`교체 전 데이터: ${result.previousData}`);
+  console.log(`복원 완료: ${result.restoredFrom}`);
+  console.log(result.safetyBackup ? `복원 직전 안전 백업: ${result.safetyBackup}` : '새 설치 가져오기: 교체할 기존 DB가 없습니다.');
+  if (result.previousData) console.log(`교체 전 폴더: ${result.previousData}`);
 } else throw new Error('지원 명령: create, list, verify, restore');

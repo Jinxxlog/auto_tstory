@@ -2,9 +2,12 @@ import { DatabaseSync } from 'node:sqlite';
 import { mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
-import type { Asset, Draft, Job, Settings } from './model';
-import { normalizeBlogUrl } from '../services/tistory/url';
+import { kindNames, type Asset, type Draft, type Job, type Settings } from './model';
+import { normalizeBlogUrl, normalizePostUrl } from '../services/tistory/url';
 import { validateMaterial } from './material';
+import { validateBlocks, withBlocks, maxDraftImages } from './blocks';
+import { validateWriting, validateOutline, expandedKind } from './writing';
+import { blogTarget } from './connections';
 
 export const dataRoot = path.resolve(/* turbopackIgnore: true */ process.env.TSTORY_DATA_DIR || path.join(process.cwd(), 'data'));
 export function openStore(root = dataRoot) {
@@ -21,7 +24,7 @@ export function openStore(root = dataRoot) {
     INSERT OR IGNORE INTO migrations VALUES (1);`);
   const now = () => new Date().toISOString();
   function transaction<T>(fn: () => T): T { db.exec('BEGIN IMMEDIATE'); try { const value = fn(); db.exec('COMMIT'); return value; } catch (error) { db.exec('ROLLBACK'); throw error; } }
-  const settings = (): Settings => { const row = db.prepare('SELECT body FROM settings WHERE id=1').get(); return row ? JSON.parse(String(row.body)) : { blog: 'https://mid-night-coding.tistory.com', categories: [], connection: '미확인' }; };
+  const settings = (): Settings => { const row = db.prepare('SELECT body FROM settings WHERE id=1').get(); return row ? JSON.parse(String(row.body)) : { blog: '', categories: [], connection: '블로그 주소 설정 필요' }; };
   const setSettings = (value: Settings) => { value.blog = normalizeBlogUrl(value.blog); db.prepare('INSERT OR REPLACE INTO settings VALUES (1,?)').run(JSON.stringify(value)); return value; };
   const assets = (): Asset[] => db.prepare('SELECT body FROM assets ORDER BY rowid DESC').all().map(row => JSON.parse(String(row.body)));
   const asset = (id: string): Asset => { const row = db.prepare('SELECT body FROM assets WHERE id=?').get(id); if (!row) throw new Error('이미지를 찾을 수 없습니다.'); return JSON.parse(String(row.body)); };
@@ -32,6 +35,8 @@ export function openStore(root = dataRoot) {
     return transaction(() => {
       if (value.id) { const previous = draft(value.id); if (previous.version !== value.version) throw new Error('다른 화면에서 수정되었습니다. 새로고침 후 다시 저장하세요.'); db.prepare('INSERT OR IGNORE INTO draft_versions VALUES (?,?,?)').run(previous.id, previous.version, JSON.stringify(previous)); }
       for (const image of value.images) asset(image.id);
+      if (value.schemaVersion === 2) db.prepare('INSERT OR IGNORE INTO migrations VALUES (6)').run();
+      if (expandedKind(value.kind) || value.writing || value.outline || value.blocks?.some(block => block.locked)) db.prepare('INSERT OR IGNORE INTO migrations VALUES (7)').run();
       const saved: Draft = { ...value, id: value.id || randomUUID(), version: value.version + 1, updatedAt: now() };
       db.prepare('INSERT OR REPLACE INTO documents VALUES (?,?)').run(saved.id, JSON.stringify(saved)); db.prepare('INSERT INTO draft_versions VALUES (?,?,?)').run(saved.id, saved.version, JSON.stringify(saved)); return saved;
     });
@@ -42,8 +47,9 @@ export function openStore(root = dataRoot) {
   function enqueue(kind: 'connect' | 'publish', draftId?: string) {
     return transaction(() => {
       const config = settings(); const doc = kind === 'publish' ? draft(draftId || '') : undefined;
+      if (!config.blog) throw new Error('블로그 연결 화면에서 내 블로그 주소를 먼저 저장하세요.');
       if (doc) {
-        const unresolved = db.prepare("SELECT * FROM jobs WHERE kind IN ('publish','verify') AND state IN ('queued','running','needs_login','unknown','needs_attention')").all().map(toJob).find(job => job.snapshot.blog === config.blog && job.snapshot.draft?.id === doc.id && job.snapshot.draft.version !== doc.version);
+        const unresolved = db.prepare("SELECT * FROM jobs WHERE kind IN ('publish','verify') AND state NOT IN ('succeeded','cancelled')").all().map(toJob).find(job => job.snapshot.blog === config.blog && job.snapshot.draft?.id === doc.id && job.snapshot.draft.version !== doc.version && (job.state !== 'failed' || job.kind === 'verify' || job.snapshot.postUrl || job.snapshot.candidatePostUrl || job.result));
         if (unresolved) throw new Error('이 원고의 이전 전송 작업을 먼저 확인하세요. 버전을 바꿔 다시 전송할 수 없습니다.');
       }
       if (doc && (!doc.title.trim() || !doc.markdown.trim() || !config.categories.includes(doc.category))) throw new Error('제목·본문과 새로고침한 카테고리를 확인하세요.');
@@ -52,7 +58,7 @@ export function openStore(root = dataRoot) {
       if (existing && (doc || ['queued', 'running', 'needs_login'].includes(String(existing.state)))) return toJob(existing);
       if (existing) db.prepare('UPDATE jobs SET dedupe=? WHERE id=?').run(`${dedupe}:${randomUUID()}`, String(existing.id));
       const id = randomUUID(); const time = now();
-      db.prepare('INSERT INTO jobs VALUES (?,?,?,?,?,?,?,?,?)').run(id, dedupe, kind, 'queued', '실행 대기', JSON.stringify({ blog: config.blog, draft: doc }), null, time, time); return job(id);
+      db.prepare('INSERT INTO jobs VALUES (?,?,?,?,?,?,?,?,?)').run(id, dedupe, kind, 'queued', '실행 대기', JSON.stringify({ blog: config.blog, target: blogTarget(config, doc?.category), draft: doc }), null, time, time); return job(id);
     });
   }
   const updateJob = (id: string, state: string, step: string, result: string | null = null) => { db.prepare('UPDATE jobs SET state=?,step=?,result=?,updated_at=? WHERE id=?').run(state, step, result, now(), id); };
@@ -74,15 +80,33 @@ export function openStore(root = dataRoot) {
       if (!row) return; updateJob(String(row.id), 'running', '브라우저 연결'); return job(String(row.id));
     });
   }
-  return { db, settings, setSettings, assets, asset, drafts, draft, saveDraft, jobs, job, enqueue, updateJob, acquire, claim,
-    recordPost(id: string, url: string) { const current = job(id); if (new URL(url).origin !== current.snapshot.blog) throw new Error('저장 결과 주소 불일치'); db.prepare('UPDATE jobs SET snapshot=?,result=? WHERE id=?').run(JSON.stringify({ ...current.snapshot, postUrl: url }), url, id); },
-    verify(id: string) { return transaction(() => { const current = job(id); const url = current.snapshot.postUrl || current.result; if (!url || new URL(url).origin !== current.snapshot.blog || !['needs_attention','succeeded','failed'].includes(current.state)) throw new Error('확인 가능한 저장 결과가 없습니다.'); db.prepare("UPDATE jobs SET kind='verify',state='queued',step='저장 결과 다시 확인 대기',snapshot=?,result=?,updated_at=? WHERE id=?").run(JSON.stringify({ ...current.snapshot, postUrl: url }), url, now(), id); return job(id); }); },
+  return { db, root, settings, setSettings, assets, asset, drafts, draft, saveDraft, jobs, job, enqueue, updateJob, acquire, claim,
+    recordImagePaths(id: string, paths: string[]) { const current = job(id); if (paths.length !== current.snapshot.draft?.images.length || paths.some(value => !value.startsWith('/') || /[?#]/.test(value))) throw new Error('업로드 사진 참조를 확인하세요.'); db.prepare('UPDATE jobs SET snapshot=? WHERE id=?').run(JSON.stringify({ ...current.snapshot, imagePaths: paths }), id); },
+    recordPost(id: string, value: string) { const current = job(id); const url = normalizePostUrl(value, current.snapshot.blog); const { candidatePostUrl: _, ...snapshot } = current.snapshot; db.prepare('UPDATE jobs SET snapshot=?,result=? WHERE id=?').run(JSON.stringify({ ...snapshot, postUrl: url }), url, id); },
+    verify(id: string, candidate?: string) { return transaction(() => {
+      const current = job(id);
+      if (!current.snapshot.draft || current.kind === 'connect' || !['unknown','needs_attention','needs_login','succeeded','failed'].includes(current.state)) throw new Error('이 작업은 지금 재확인할 수 없습니다.');
+      const knownUrl = current.snapshot.postUrl || current.result;
+      if (knownUrl && candidate !== undefined && normalizePostUrl(candidate, current.snapshot.blog) !== normalizePostUrl(knownUrl, current.snapshot.blog)) throw new Error('이미 확보한 저장 주소를 다른 글로 바꿀 수 없습니다.');
+      const value = knownUrl || candidate || current.snapshot.candidatePostUrl;
+      if (!value) throw new Error('글 관리에서 기존 글을 확인하고 저장된 글 주소를 입력하세요.');
+      const url = normalizePostUrl(value, current.snapshot.blog);
+      const snapshot = knownUrl ? { ...current.snapshot, postUrl: url } : { ...current.snapshot, candidatePostUrl: url };
+      db.prepare("UPDATE jobs SET kind='verify',state='queued',step='기존 글 읽기 전용 확인 대기',snapshot=?,result=?,updated_at=? WHERE id=?").run(JSON.stringify(snapshot), knownUrl ? url : null, now(), id);
+      return job(id);
+    }); },
+    resolveUnpublished(id: string, confirmed: boolean) { return transaction(() => {
+      const current = job(id);
+      if (!confirmed || !current.snapshot.draft || current.snapshot.postUrl || current.result || !['unknown','needs_attention','needs_login','failed'].includes(current.state)) throw new Error('저장 주소가 없는 중단 작업만 글 관리에서 미발행을 확인한 뒤 종료할 수 있습니다.');
+      db.prepare("UPDATE jobs SET state='cancelled',step='사용자가 글 관리에서 미발행 확인 · 재전송하지 않고 종료',snapshot=?,updated_at=? WHERE id=?").run(JSON.stringify({ ...current.snapshot, unpublishedConfirmedAt: now() }), now(), id);
+      return job(id);
+    }); },
     addAsset(value: Asset) { db.prepare('INSERT INTO assets VALUES (?,?)').run(value.id, JSON.stringify(value)); },
     heartbeat(owner: string) { return db.prepare('UPDATE lease SET expires=? WHERE id=1 AND owner=? AND expires>?').run(Date.now()+15_000, owner, Date.now()).changes === 1; },
     release(owner: string) { db.prepare('DELETE FROM lease WHERE owner=?').run(owner); },
     workerOnline() { const row = db.prepare('SELECT expires FROM lease WHERE id=1').get(); return !!row && Number(row.expires) > Date.now(); },
-    resume(id: string) { return transaction(() => { const current = job(id); if (!['needs_login','failed'].includes(current.state)) throw new Error('이 작업은 자동 재시도할 수 없습니다. 티스토리 관리 화면에서 결과를 확인하세요.'); updateJob(id, 'queued', '재개 대기'); return job(id); }); },
-    cancel(id: string) { const count = db.prepare("UPDATE jobs SET state='cancelled', step='사용자가 취소',updated_at=? WHERE id=? AND state IN ('queued','needs_login','failed')").run(now(), id).changes; if (!count) throw new Error('진행 중이거나 저장 결과 확인이 필요한 작업은 취소할 수 없습니다.'); },
+    resume(id: string) { return transaction(() => { const current = job(id); if (!['needs_login','failed'].includes(current.state)) throw new Error('이 작업은 자동 재시도할 수 없습니다. 티스토리 관리 화면에서 결과를 확인하세요.'); if (current.snapshot.postUrl || current.result || current.snapshot.candidatePostUrl) db.prepare("UPDATE jobs SET kind='verify' WHERE id=?").run(id); updateJob(id, 'queued', '재개 대기', current.snapshot.postUrl || current.result); return job(id); }); },
+    cancel(id: string) { return transaction(() => { const current = job(id); if (current.kind === 'verify' || current.snapshot.postUrl || current.snapshot.candidatePostUrl || current.result) throw new Error('저장 결과 확인 작업은 취소할 수 없습니다. 기존 글을 재확인하세요.'); const count = db.prepare("UPDATE jobs SET state='cancelled', step='사용자가 취소',updated_at=? WHERE id=? AND state IN ('queued','needs_login','failed')").run(now(), id).changes; if (!count) throw new Error('진행 중이거나 저장 결과 확인이 필요한 작업은 취소할 수 없습니다.'); }); },
   };
 }
 export function validateDraft(input: unknown): Draft {
@@ -91,10 +115,20 @@ export function validateDraft(input: unknown): Draft {
   for (const [key, max] of Object.entries({ id: 36, title: 150, summary: 20000, markdown: 100000, category: 200 })) if (typeof v[key] !== 'string' || (v[key] as string).length > max) throw new Error(`${key} 입력 길이를 확인하세요.`);
   if (v.id && !/^[a-f0-9-]{36}$/.test(String(v.id))) throw new Error('잘못된 원고 ID');
   if (!Number.isSafeInteger(v.version) || Number(v.version) < 0 || (!v.id && v.version !== 0)) throw new Error('잘못된 원고 버전');
-  if (!['project','technical','ps'].includes(String(v.kind))) throw new Error('글 유형을 확인하세요.');
-  if (!Array.isArray(v.images) || v.images.length > 20) throw new Error('이미지는 최대 20장입니다.');
-  const images = v.images.map(image => { if (!image || typeof image.id !== 'string' || typeof image.caption !== 'string' || image.caption.length > 500) throw new Error('이미지 설명을 확인하세요.'); return { id: image.id, caption: image.caption }; });
+  if (!Object.hasOwn(kindNames, String(v.kind))) throw new Error('글 유형을 확인하세요.');
+  if (v.schemaVersion !== undefined && v.schemaVersion !== 2) throw new Error('지원하지 않는 원고 형식입니다. 앱 버전을 확인하세요.');
+  if (v.blocks !== undefined && v.schemaVersion !== 2) throw new Error('블록 원고의 형식 버전을 확인하세요.');
+  if (v.schemaVersion === 2) {
+    const blocks = validateBlocks(v.blocks);
+    const projected = withBlocks(v as unknown as Draft, blocks);
+    if (v.cover !== null && !projected.images.some(image => image.id === v.cover)) throw new Error('대표 이미지는 원고 사진에서 선택하세요.');
+    return { ...validateDraft({ ...v, schemaVersion: undefined, blocks: undefined, markdown: projected.markdown, images: projected.images }), schemaVersion: 2, blocks };
+  }
+  if (!Array.isArray(v.images) || v.images.length > maxDraftImages) throw new Error('이미지는 최대 50장입니다.');
+  const images = v.images.map(image => { if (!image || typeof image.id !== 'string' || !/^[a-f0-9-]{36}$/.test(image.id) || typeof image.caption !== 'string' || image.caption.length > 500) throw new Error('이미지 설명을 확인하세요.'); return { id: image.id, caption: image.caption }; });
   if (new Set(images.map(i => i.id)).size !== images.length) throw new Error('같은 이미지를 중복으로 넣을 수 없습니다.');
   if (v.cover !== null && !images.some(i => i.id === v.cover)) throw new Error('대표 이미지는 원고 사진에서 선택하세요.');
-  return { id: String(v.id), version: Number(v.version), title: String(v.title), kind: v.kind as Draft['kind'], summary: String(v.summary), ...(v.material === undefined ? {} : { material: validateMaterial(v.material) }), markdown: String(v.markdown), category: String(v.category), images, cover: v.cover as string | null, updatedAt: '' };
+  if (v.styleProfileId !== undefined && (typeof v.styleProfileId !== 'string' || v.styleProfileId.length > 80)) throw new Error('문체 선택을 확인하세요.');
+  if (v.reviewedOutline !== undefined && (typeof v.reviewedOutline !== 'string' || v.reviewedOutline.length > 80)) throw new Error('개요 검토 상태를 확인하세요.');
+  return { ...(v.writing === undefined ? {} : { writing: validateWriting(v.writing) }), ...(v.outline === undefined ? {} : { outline: validateOutline(v.outline) }), ...(v.reviewedOutline === undefined ? {} : { reviewedOutline: v.reviewedOutline as string }), ...(v.styleProfileId === undefined ? {} : { styleProfileId: v.styleProfileId as string }), id: String(v.id), version: Number(v.version), title: String(v.title), kind: v.kind as Draft['kind'], summary: String(v.summary), ...(v.material === undefined ? {} : { material: validateMaterial(v.material) }), markdown: String(v.markdown), category: String(v.category), images, cover: v.cover as string | null, updatedAt: '' };
 }

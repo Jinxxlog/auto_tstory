@@ -2,11 +2,12 @@ import { randomUUID } from 'node:crypto';
 import type { openStore } from './store';
 import type { StyleSource,StyleJob,StyleProfile,StyleKind,StyleRules } from './style-model';
 import { parseStyle } from '../services/style/content';
-const kinds=['common','project','technical','ps'];
+const kinds=['common','project','technical','ps','travel','information','free'];
 export function styleStore(store: ReturnType<typeof openStore>) {
   const db=store.db;
   db.exec(`CREATE TABLE IF NOT EXISTS style_sources (id TEXT PRIMARY KEY, body TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS style_jobs (id TEXT PRIMARY KEY, body TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS style_defaults (blog TEXT NOT NULL, kind TEXT NOT NULL, profile_id TEXT NOT NULL, PRIMARY KEY(blog,kind));
     CREATE TABLE IF NOT EXISTS style_profiles (id TEXT NOT NULL, version INTEGER NOT NULL, body TEXT NOT NULL, PRIMARY KEY(id,version));
     INSERT OR IGNORE INTO migrations VALUES (3);`);
   const sources=():StyleSource[]=>db.prepare('SELECT body FROM style_sources ORDER BY rowid DESC').all().map(r=>JSON.parse(String(r.body)));
@@ -15,7 +16,14 @@ export function styleStore(store: ReturnType<typeof openStore>) {
   const job=(id:string)=>{const value=jobs().find(j=>j.id===id);if(!value)throw new Error('문체 분석 작업이 없습니다.');return value;};
   const put=(value:StyleJob)=>db.prepare('INSERT OR REPLACE INTO style_jobs VALUES (?,?)').run(value.id,JSON.stringify(value));
   function tx<T>(fn:()=>T){db.exec('BEGIN IMMEDIATE');try{const v=fn();db.exec('COMMIT');return v;}catch(e){db.exec('ROLLBACK');throw e;}}
-  return {sources,jobs,profiles,job,put,
+  const defaults = (): Record<string, string> => Object.fromEntries(db.prepare('SELECT kind,profile_id FROM style_defaults WHERE blog=?').all(store.settings().blog).map(row => [String(row.kind), String(row.profile_id)]));
+  return {sources,jobs,profiles,job,put,defaults,
+    setDefault(kind: string, profileId: string) {
+      const blog = store.settings().blog; if (!blog || !kinds.includes(kind) || kind === 'common') throw new Error('블로그 주소와 글 유형을 확인하세요.');
+      const profile = profiles().find(p => p.id === profileId);
+      if (profileId && (!profile || (profile.kind !== 'common' && profile.kind !== kind))) throw new Error('유형에 맞는 문체를 선택하세요.');
+      db.prepare('INSERT OR REPLACE INTO style_defaults VALUES (?,?,?)').run(blog, kind, profileId); return defaults();
+    },
     saveSource(input:unknown) { const v=input as StyleSource;if(!v || typeof v.title!=='string'||!v.title.trim()||v.title.length>200||typeof v.body!=='string'||v.body.trim().length<80||v.body.length>50000||!kinds.includes(v.kind)||typeof v.url!=='string'||v.url.length>3000)throw new Error('대표 글 제목·유형·본문(80~50,000자)을 확인하세요.');
       if(v.url){const u=new URL(v.url);if(u.protocol!=='https:'||u.username||u.password)throw new Error('출처는 HTTPS 주소만 지원합니다.');}
       if(v.id&&!sources().some(s=>s.id===v.id))throw new Error('수정할 대표 글이 없습니다.');

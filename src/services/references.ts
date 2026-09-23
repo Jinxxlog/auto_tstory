@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import type { openStore } from '../lib/store';
 import type { Reference } from '../lib/material';
 
-const officialHosts = new Set(['docs.python.org', 'developer.mozilla.org', 'dev.mysql.com', 'www.postgresql.org', 'docs.oracle.com', 'docs.kernel.org', 'learn.microsoft.com', 'docs.docker.com', 'doc.rust-lang.org', 'go.dev', 'nodejs.org']);
+const officialHosts = new Set(['docs.python.org', 'developer.mozilla.org', 'dev.mysql.com', 'www.postgresql.org', 'docs.oracle.com', 'docs.kernel.org', 'learn.microsoft.com', 'docs.docker.com', 'doc.rust-lang.org', 'go.dev', 'nodejs.org', 'korean.visitkorea.or.kr', 'www.korea.kr']);
 const problemHosts = new Set(['www.acmicpc.net', 'school.programmers.co.kr', 'atcoder.jp', 'codeforces.com']);
 export function referenceUrl(value: string, fetchable = false) {
   if (typeof value !== 'string' || value.length > 2000) throw new Error('출처 URL을 확인하세요.');

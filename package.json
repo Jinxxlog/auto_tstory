@@ -2,10 +2,11 @@
   "name": "auto-tstory",
   "version": "0.0.1",
   "private": true,
+  "license": "UNLICENSED",
   "description": "Local Tistory writing workspace",
   "type": "module",
   "engines": {
-    "node": ">=22.20.0"
+    "node": ">=22.20.0 <23"
   },
   "scripts": {
     "p0": "tsx scripts/p0.ts",
@@ -14,16 +15,25 @@
     "typecheck": "tsc --noEmit",
     "test": "tsx --test tests/*.test.ts",
     "test:browser": "tsx scripts/browser-smoke.ts",
-    "dev": "tsx scripts/dev.ts",
+    "test:blocks": "tsx scripts/web-blocks-check.ts",
+    "dev": "node scripts/run.mjs",
     "build": "next build",
-    "start": "tsx scripts/dev.ts --production",
+    "test:build-artifacts": "node scripts/check-build.mjs",
+    "start": "node scripts/run.mjs --production",
+    "launch": "node scripts/launcher.mjs start",
+    "stop": "node scripts/launcher.mjs stop",
+    "status": "node scripts/launcher.mjs status",
+    "doctor": "node scripts/doctor.mjs",
+    "setup": "node scripts/setup.mjs",
+    "test:installation": "node --import tsx scripts/installation-check.ts",
     "worker": "tsx scripts/worker.ts",
     "test:web": "tsx scripts/web-smoke.ts",
     "audit": "tsx scripts/audit.ts",
     "backup": "tsx scripts/backup.ts create",
     "backup:list": "tsx scripts/backup.ts list",
     "backup:verify": "tsx scripts/backup.ts verify",
-    "restore": "tsx scripts/backup.ts restore"
+    "restore": "tsx scripts/backup.ts restore",
+    "test:writing": "tsx scripts/web-writing-check.ts"
   },
   "dependencies": {
     "cheerio": "1.2.0",
@@ -33,14 +43,14 @@
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "sanitize-html": "2.17.7",
-    "sharp": "0.35.4"
+    "sharp": "0.35.4",
+    "tsx": "4.23.13"
   },
   "devDependencies": {
     "@types/node": "22.20.1",
     "@types/react": "19.2.18",
     "@types/react-dom": "19.2.7",
     "@types/sanitize-html": "2.16.1",
-    "tsx": "4.23.13",
     "typescript": "7.0.2"
   }
 }

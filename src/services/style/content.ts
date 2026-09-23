@@ -14,7 +14,7 @@ export function analysisPrompt(job: StyleJob) {
 문장 끝맺음, 문장/문단 길이, 도입과 마무리, 소제목, 코드·표·사진 설명 배치, 표현 습관과 피할 표현을 한국어 rules에 정리하세요.
 관찰된 공통 규칙과 선택된 유형(${job.kind})의 규칙을 구분하세요. observations에는 관찰의 근거가 된 글 제목과 짧은 설명을 쓰세요.
 자료가 적거나 유형이 혼합되거나 상충하면 warnings에 한계를 명시하세요. 한 편의 특징을 전체 문체라고 단정하지 마세요.
-본문에는 [사진] 표시가 포함될 수 있고 긴 글은 발췌입니다. 구현상 사진은 글 끝에 배치되므로 원문 사진 배치를 그대로 지원한다고 제안하지 마세요.
+본문에는 [사진] 표시가 포함될 수 있고 긴 글은 발췌입니다. 본문 사이 사진 배치가 가능합니다. 원문 배치와 사진 설명의 역할을 관찰하되 새 글의 사실로 옮기지 마세요.
 ${JSON.stringify(job.sources.map(s => ({ title: s.title, kind: s.kind, body: excerpt(s.body, limit), excerpted: s.body.length > limit })))}`;
 }
 export function snapshot(profile: StyleProfile, kind: Draft['kind']): StyleSnapshot {

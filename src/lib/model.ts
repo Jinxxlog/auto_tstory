@@ -1,7 +1,15 @@
 import type { Material } from './material';
 export type DraftImage = { id: string; caption: string };
-export type Draft = { id: string; version: number; title: string; kind: 'project' | 'technical' | 'ps'; summary: string; material?: Material; markdown: string; category: string; images: DraftImage[]; cover: string | null; updatedAt: string };
-export type Asset = { id: string; name: string; mime: string; size: number; library: boolean };
+export type TextBlock = { id: string; type: 'text'; markdown: string; locked?: boolean };
+export type ImageBlock = { id: string; type: 'image'; imageId: string; note: string; caption: string; description: string; group: string; locked?: boolean };
+export type DraftBlock = TextBlock | ImageBlock;
+export type DraftKind = 'project' | 'technical' | 'ps' | 'travel' | 'information' | 'free';
+export const kindNames: Record<DraftKind, string> = { project: '프로젝트', technical: '기술', ps: 'PS 문제', travel: '여행', information: '정보', free: '자유' };
+export type WritingInput = { place: string; dates: string; itinerary: string; experience: string; costs: string; audience: string; scope: string; checkedAt: string; mood: string };
+export type OutlineItem = { blockId: string; title: string; purpose: string };
+export type Draft = { id: string; version: number; schemaVersion?: 2; blocks?: DraftBlock[]; title: string; kind: DraftKind; summary: string; material?: Material; writing?: WritingInput; outline?: OutlineItem[]; reviewedOutline?: string; styleProfileId?: string; markdown: string; category: string; images: DraftImage[]; cover: string | null; updatedAt: string };
+export type Asset = { id: string; name: string; mime: string; size: number; library: boolean; sha256?: string; width?: number; height?: number };
 export type Settings = { blog: string; categories: string[]; connection: string; checkedAt?: string };
-export type Job = { id: string; kind: 'connect' | 'publish' | 'verify'; state: string; step: string; snapshot: { blog: string; draft?: Draft; postUrl?: string }; result: string | null; createdAt: string; updatedAt: string };
+export type Job = { id: string; kind: 'connect' | 'publish' | 'verify'; state: string; step: string; snapshot: { blog: string; target?: BlogTarget; draft?: Draft; imagePaths?: string[]; postUrl?: string; candidatePostUrl?: string; unpublishedConfirmedAt?: string }; result: string | null; createdAt: string; updatedAt: string };
+export type BlogTarget = { platform: 'tistory' | 'naver'; blogId: string; profile: string; category: string; visibility: 'private' };
 export const jobLabels: Record<string, string> = { queued: '대기 중', running: '진행 중', needs_login: '로그인 필요', needs_attention: '확인 필요', succeeded: '완료', failed: '실패', cancelled: '취소됨', unknown: '저장 결과 확인 필요' };

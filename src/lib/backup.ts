@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { backup as sqliteBackup, DatabaseSync } from 'node:sqlite';
-import { copyFile, mkdir, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises';
+import { copyFile, lstat, mkdir, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { constants as fsConstants } from 'node:fs';
 import path from 'node:path';
 
@@ -8,7 +8,7 @@ const formatVersion = 2;
 const databaseFile = 'app.sqlite';
 const manifestFile = 'manifest.json';
 const idPattern = /^[a-f0-9-]{36}$/;
-const includedTables = ['migrations', 'documents', 'draft_versions', 'assets', 'settings', 'jobs', 'ai_settings', 'ai_jobs', 'style_sources', 'style_jobs', 'style_profiles', 'reference_sources', 'code_checks'];
+const includedTables = ['migrations', 'documents', 'draft_versions', 'assets', 'settings', 'jobs', 'ai_settings', 'ai_jobs', 'style_sources', 'style_jobs', 'style_profiles', 'style_defaults', 'reference_sources', 'code_checks', 'photo_jobs', 'photo_cache'];
 
 export type BackupManifest = {
   formatVersion: number;
@@ -27,6 +27,17 @@ function stamp(date = new Date()) {
 }
 
 function resolved(value: string) { return path.resolve(value); }
+
+async function renameDirectory(source: string, destination: string) {
+  // Windows can briefly retain a handle after SQLite/file reads have closed.
+  for (let attempt = 0; ; attempt++) {
+    try { await rename(source, destination); return; }
+    catch (error) {
+      if (process.platform !== 'win32' || attempt >= 4 || !['EPERM', 'EBUSY', 'EACCES'].includes((error as NodeJS.ErrnoException).code || '')) throw error;
+      await new Promise(resolve => setTimeout(resolve, 50 * 2 ** attempt));
+    }
+  }
+}
 
 function assertDataRoot(root: string) {
   const value = resolved(root);
@@ -62,7 +73,7 @@ function databaseSummary(db: DatabaseSync) {
 function activeWork(db: DatabaseSync) {
   const names = tableNames(db); const active: string[] = [];
   if (names.has('jobs') && Number(db.prepare("SELECT COUNT(*) AS count FROM jobs WHERE state IN ('queued','running')").get()?.count)) active.push('블로그 전송');
-  for (const [table, label] of [['ai_jobs', 'AI 생성'], ['style_jobs', '문체 분석'], ['code_checks', '코드 검증']] as const) {
+  for (const [table, label] of [['ai_jobs', 'AI 생성'], ['style_jobs', '문체 분석'], ['code_checks', '코드 검증'], ['photo_jobs', '사진 분석']] as const) {
     if (!names.has(table)) continue;
     const rows = db.prepare(`SELECT body FROM ${table}`).all();
     if (rows.some(row => ['queued', 'running'].includes(String((JSON.parse(String(row.body)) as { state?: string }).state)))) active.push(label);
@@ -127,7 +138,7 @@ export async function createBackup(sourceRoot: string, backupRoot: string): Prom
     const dbInfo = await regularFile(snapshotPath);
     const manifest: BackupManifest = { formatVersion, createdAt: new Date().toISOString(), app: 'auto_tstory', database: { file: databaseFile, size: dbInfo.size, sha256: await sha256(snapshotPath), integrity: 'ok', ...summary }, images, excluded: ['browser authentication', 'AI authentication', 'diagnostic logs'], normalized: ['connection status', 'worker lease'] };
     await writeFile(path.join(temporary, manifestFile), JSON.stringify(manifest, null, 2), { encoding: 'utf8', flag: 'wx' });
-    await rename(temporary, destination);
+    await renameDirectory(temporary, destination);
     return verifyBackup(destination);
   } catch (error) { await removeCreating(temporary); throw error; }
 }
@@ -164,33 +175,40 @@ export async function verifyBackup(directory: string): Promise<VerifiedBackup> {
 
 export async function restoreBackup(directory: string, targetRoot: string, safetyBackupRoot: string) {
   const verified = await verifyBackup(directory); const target = assertDataRoot(targetRoot); const parent = path.dirname(target);
-  if (verified.directory === target || verified.directory.startsWith(target + path.sep)) throw new Error('복원 원본은 대상 데이터 폴더 밖에 있어야 합니다.');
-  const currentDbPath = path.join(target, databaseFile); const currentDb = new DatabaseSync(currentDbPath, { readOnly: true });
-  try {
-    const lease = tableNames(currentDb).has('lease') ? currentDb.prepare('SELECT expires FROM lease WHERE id=1').get() : undefined;
-    if (lease && Number(lease.expires) > Date.now()) throw new Error('웹앱 실행기가 켜져 있습니다. npm run dev를 정상 종료한 뒤 복원하세요.');
-    const work = activeWork(currentDb); if (work.length) throw new Error(`진행 대기 중인 작업이 있어 복원할 수 없습니다: ${work.join(', ')}`);
-  } finally { currentDb.close(); }
-  const safety = await createBackup(target, safetyBackupRoot);
+  if (verified.directory === target || verified.directory.startsWith(target + path.sep) || target.startsWith(verified.directory + path.sep)) throw new Error('복원 원본과 대상 데이터 폴더는 서로 분리되어야 합니다.');
+  const targetInfo = await lstat(target).catch(error => { if (error.code === 'ENOENT') return null; throw error; });
+  if (targetInfo && (!targetInfo.isDirectory() || targetInfo.isSymbolicLink())) throw new Error('복원 대상은 일반 데이터 폴더여야 합니다.');
+  const entries = targetInfo ? await readdir(target) : [];
+  if (entries.length && !entries.includes(databaseFile)) throw new Error('DB가 없는 비어 있지 않은 폴더에는 복원할 수 없습니다. 빈 폴더를 선택하세요.');
+  let safetyBackup: string | null = null;
+  if (entries.includes(databaseFile)) {
+    const currentDb = new DatabaseSync(path.join(target, databaseFile), { readOnly: true });
+    try {
+      const lease = tableNames(currentDb).has('lease') ? currentDb.prepare('SELECT expires FROM lease WHERE id=1').get() : undefined;
+      if (lease && Number(lease.expires) > Date.now()) throw new Error('웹앱 실행기가 켜져 있습니다. Stop.cmd 또는 Ctrl+C로 정상 종료한 뒤 복원하세요.');
+      const work = activeWork(currentDb); if (work.length) throw new Error(`진행 대기 중인 작업이 있어 복원할 수 없습니다: ${work.join(', ')}`);
+    } finally { currentDb.close(); }
+    safetyBackup = (await createBackup(target, safetyBackupRoot)).directory;
+  }
   const suffix = `${stamp()}-${randomUUID().slice(0, 8)}`; const staging = path.join(parent, `.restore-${suffix}`); const previous = path.join(parent, `${path.basename(target)}.before-restore-${suffix}`);
-  const failed = path.join(parent, `${path.basename(target)}.failed-restore-${suffix}`); let swapped = false;
+  const failed = path.join(parent, `${path.basename(target)}.failed-restore-${suffix}`); let swapped = false; let movedPrevious = false;
   await mkdir(path.join(staging, 'images'), { recursive: true });
   try {
     await copyFile(path.join(verified.directory, databaseFile), path.join(staging, databaseFile), fsConstants.COPYFILE_EXCL);
     for (const image of verified.manifest.images) await copyFile(path.join(verified.directory, ...image.file.split('/')), path.join(staging, ...image.file.split('/')), fsConstants.COPYFILE_EXCL);
-    await rename(target, previous);
-    try { await rename(staging, target); swapped = true; } catch (error) { await rename(previous, target); throw error; }
+    if (targetInfo) { await renameDirectory(target, previous); movedPrevious = true; }
+    // For a new installation, refuse to replace a directory created while copying.
+    else if (await lstat(target).then(() => true, error => { if (error.code === 'ENOENT') return false; throw error; })) throw new Error('복원 중 대상 폴더가 생성되었습니다. 앱을 종료하고 다시 확인하세요.');
+    await renameDirectory(staging, target); swapped = true;
     const restoredDb = new DatabaseSync(path.join(target, databaseFile), { readOnly: true });
     try { databaseSummary(restoredDb); } finally { restoredDb.close(); }
-    return { restoredFrom: verified.directory, previousData: previous, safetyBackup: safety.directory };
+    return { restoredFrom: verified.directory, previousData: movedPrevious ? previous : null, safetyBackup };
   } catch (error) {
     if (swapped) {
-      await rename(target, failed);
-      await rename(previous, target);
-    } else {
-      const stagingName = path.basename(staging);
-      if (stagingName.startsWith('.restore-')) await rm(staging, { recursive: true, force: true });
+      await renameDirectory(target, failed);
     }
+    if (movedPrevious) await renameDirectory(previous, target);
+    if (!swapped && path.dirname(staging) === parent && path.basename(staging).startsWith('.restore-')) await rm(staging, { recursive: true, force: true });
     throw error;
   }
 }
