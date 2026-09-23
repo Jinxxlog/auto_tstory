@@ -249,3 +249,7 @@ git diff --cached
 git commit -m "변경 내용"
 git push
 ```
+
+### 게시 중복 방지·장애 복구 검증
+
+[검증 보고서](BLOG_PUBLISH_RECOVERY_VALIDATION.md)와 [익명 결과 JSON](measurements/blog-publish-recovery-20260923.json)에 자동 30회와 실제 비공개 E1~E3 결과를 분리했다. 실제 검사 최초 E3의 포트 오류 1회도 보존했다. 현재는 요청 억제·자동 재발행 차단·기존 글 재확인을 검증한 것이며 외부 저장 exactly-once 보장은 아니다.

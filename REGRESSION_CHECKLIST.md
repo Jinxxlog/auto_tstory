@@ -30,6 +30,10 @@
 
 ## 자동 회귀 검사
 
+- `npm run test:publish-recovery`: S1~S6 각 5회, 격리 DB/프로세스 종료/모의 외부 저장 및 실제 읽기 검증. [상세 결과·실패 이력](BLOG_PUBLISH_RECOVERY_VALIDATION.md).
+- `npm run test:publish-recovery:live`: 명시적 실제 계정 비공개 E1~E3. 합성 글을 생성하므로 일반/CI 검사에 포함하지 않는다. 성공 marker는 재사용하고 자동 재발행하지 않는다.
+
+
 - `npm test`: 원고 버전, 충돌, AI 결과 적용, 문체 스냅샷, 기술·PS 입력, 출처, 코드 실행 제한 설정, 백업·복원·손상 거절을 검사한다.
 - `npm run typecheck`: TypeScript 계약과 스크립트를 검사한다.
 - `npm run build`: 프로덕션 웹앱 빌드와 라우트를 검사한다.
